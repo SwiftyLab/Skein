@@ -1,0 +1,17 @@
+.DS_Store
+.build/
+.swiftpm/
+DerivedData/
+*.xcodeproj
+*.xcworkspace
+Tuist/.build/
+Tuist/Dependencies/
+Packages/TorrentKit/.build/
+Vendor/boost/
+Skein.xcworkspace/
+Skein.xcodeproj/
+Derived/
+Vendor/openssl/
+
+# Local signing and bundle identity; copy from Local.env.example.
+Local.env

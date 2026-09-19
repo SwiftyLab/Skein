@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<!-- Outgoing peer and tracker connections. -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+	<!-- Listening socket so peers can connect to us; without this we are
+	     download-only and invisible to the swarm. -->
+	<key>com.apple.security.network.server</key>
+	<true/>
+	<!-- Download directories the user picks. Anything outside the container
+	     must additionally be held open with a security-scoped bookmark for the
+	     whole session, because libtorrent writes via plain POSIX calls. -->
+	<key>com.apple.security.files.user-selected.read-write</key>
+	<true/>
+	<key>com.apple.security.files.downloads.read-write</key>
+	<true/>
+</dict>
+</plist>

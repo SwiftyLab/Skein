@@ -1,0 +1,4 @@
+[submodule "Vendor/libtorrent"]
+	path = Vendor/libtorrent
+	url = https://github.com/arvidn/libtorrent.git
+	shallow = true

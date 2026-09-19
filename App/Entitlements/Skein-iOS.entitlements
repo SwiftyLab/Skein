@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Intentionally empty. The share extension's file handoff needs an app
+	     group, which needs a capability enabled in your developer account, so
+	     it is opt-in via TUIST_ENABLE_APP_GROUP=1 and swaps in
+	     Skein-iOS-AppGroup.entitlements. -->
+</dict>
+</plist>
