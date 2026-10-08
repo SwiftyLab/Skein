@@ -1,6 +1,6 @@
 # Third-party notices
 
-Skein's own source is under the PolyForm Strict License 1.0.0 (see
+Skein's own code and builds are under a proprietary license (see
 [LICENSE.md](LICENSE.md)). The components it builds against are not, and none
 of them is redistributed by this repository — each is fetched at build time by
 `Scripts/bootstrap.sh`, `Scripts/build-openssl.sh`, or Swift Package Manager.
@@ -29,11 +29,12 @@ all of them. At minimum that means:
 - **VLCKit is LGPL-2.1**, and this is the binding constraint. You must supply
   its license text and either its source or a written offer for it, keep it
   dynamically linked so a recipient can substitute their own build, and not
-  restrict what they may do with that portion. A blanket no-redistribution term
-  over the whole binary would contradict rights LGPL-2.1 grants them over
-  VLCKit, so the two cannot simply be stacked. Replacing VLCKit with AVFoundation
-  would remove the problem, at the cost of the formats AVFoundation will not
-  open — which is most of what people stream.
+  restrict what they may do with that portion. Skein's license excludes
+  VLCKit from its restrictions (section 4) for exactly this reason, but the
+  license text and source offer still have to ship with every build, and on
+  iOS the relinking right is hard to honour in practice. Replacing VLCKit with
+  AVFoundation would remove the problem, at the cost of the formats
+  AVFoundation will not open — which is most of what people stream.
 - **libtorrent's BSD-3-Clause** requires reproducing its copyright notice and
   disclaimer in the documentation accompanying a binary distribution.
 - **OpenSSL's Apache-2.0** requires carrying its `NOTICE` text.

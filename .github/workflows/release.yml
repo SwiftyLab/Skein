@@ -1,0 +1,57 @@
+# Publishes the newest notarized iOS build: fetches its Alternative Distribution
+# Package through AltStore, uploads the files as a GitHub release, and commits
+# the new version to AltStore/source.json, which AltStore PAL users subscribe to.
+#
+# Run it after `make notarize` once `make status` shows an ADP. Re-running is
+# safe: an existing release is reused and an unchanged source is not committed.
+#
+# Needs repository secrets ASC_ISSUER_ID, ASC_KEY_ID and ASC_PRIVATE_KEY (the
+# .p8 file's contents), and repository variables TUIST_BUNDLE_ID,
+# DEVELOPER_NAME and PRIVACY_POLICY_URL (the same values as in Local.env).
+name: Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  # Create the release and push the updated source.
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    # The script needs CryptoKit and ditto, so macOS.
+    runs-on: macos-latest
+    # Waits for App Store Connect and AltStore can each take up to 30 minutes.
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+
+      - name: Publish release
+        run: make release
+        env:
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+          TUIST_BUNDLE_ID: ${{ vars.TUIST_BUNDLE_ID }}
+          DEVELOPER_NAME: ${{ vars.DEVELOPER_NAME }}
+          PRIVACY_POLICY_URL: ${{ vars.PRIVACY_POLICY_URL }}
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Commit source
+        run: |
+          git add AltStore/source.json
+          if git diff --cached --quiet; then
+            echo "AltStore/source.json is unchanged."
+            exit 0
+          fi
+          version=$(jq -r '.apps[0].versions[0] | "\(.version) (\(.buildVersion))"' AltStore/source.json)
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -m "Add Skein $version to the AltStore source"
+          git push origin HEAD:main

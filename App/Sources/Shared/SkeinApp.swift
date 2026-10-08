@@ -46,7 +46,6 @@ extension SkeinApp {
         if background == nil {
             let coordinator = BackgroundCoordinator(manager: manager)
             coordinator.registerHandlers()
-            coordinator.scheduleProcessing()
             background = coordinator
         }
         #endif
@@ -83,8 +82,10 @@ extension SkeinApp {
         #if os(iOS)
         switch phase {
         case .background:
-            // The last reliable moment to checkpoint progress.
+            // The last reliable moment to checkpoint progress, and the point
+            // at which it is known whether a catch-up run is worth queueing.
             background?.beginSuspensionGrace()
+            background?.scheduleProcessing()
         case .active:
             // Catches anything shared while the app was not running.
             Task { await manager.drainSharedInbox() }

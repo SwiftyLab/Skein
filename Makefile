@@ -28,9 +28,16 @@ APP            := $(DERIVED_MAC)/Build/Products/Debug/Skein.app
 ifneq ($(wildcard Local.env),)
 TUIST_BUNDLE_ID ?= $(shell sed -n 's/^[[:space:]]*TUIST_BUNDLE_ID[[:space:]]*=[[:space:]]*//p' Local.env)
 TUIST_DEVELOPMENT_TEAM ?= $(shell sed -n 's/^[[:space:]]*TUIST_DEVELOPMENT_TEAM[[:space:]]*=[[:space:]]*//p' Local.env)
+TUIST_EXPORT_COMPLIANCE_CODE ?= $(shell sed -n 's/^[[:space:]]*TUIST_EXPORT_COMPLIANCE_CODE[[:space:]]*=[[:space:]]*//p' Local.env)
+# The App Store Connect key, so `make upload` signs and uploads without an
+# Apple ID signed in to Xcode. The release script reads the rest itself.
+ASC_ISSUER_ID ?= $(shell sed -n 's/^[[:space:]]*ASC_ISSUER_ID[[:space:]]*=[[:space:]]*//p' Local.env)
+ASC_KEY_ID ?= $(shell sed -n 's/^[[:space:]]*ASC_KEY_ID[[:space:]]*=[[:space:]]*//p' Local.env)
+ASC_PRIVATE_KEY_PATH ?= $(shell sed -n 's/^[[:space:]]*ASC_PRIVATE_KEY_PATH[[:space:]]*=[[:space:]]*//p' Local.env)
 endif
 export TUIST_BUNDLE_ID
 export TUIST_DEVELOPMENT_TEAM
+export TUIST_EXPORT_COMPLIANCE_CODE
 
 # A team identifier is about running on an iOS device, so it should not make a
 # quick local Mac build start demanding certificates. macOS therefore builds
@@ -43,13 +50,16 @@ endif
 
 .DEFAULT_GOAL := help
 .PHONY: help bootstrap openssl build test test-live generate assets \
-        app-macos app-macos-signed app-ios run clean clean-all lint config
+        app-macos app-macos-signed app-ios run clean clean-all lint config \
+        setup-app setup-app-plan archive upload listing listing-plan \
+        screenshots screenshots-upload screenshots-upload-plan encryption encryption-plan notarize notarize-plan status \
+        altstore-register release release-plan
 
 help: ## Show this help
 	@echo "Skein — common tasks"
 	@echo
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
-		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
+		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 	@echo
 	@echo "Local settings come from Local.env (gitignored)."
 	@echo "Start with:  cp Local.env.example Local.env"
@@ -111,6 +121,80 @@ run: app-macos ## Build and launch the macOS app
 	@codesign --force --deep --sign - $(APP) >/dev/null 2>&1 || true
 	open $(APP)
 
+# MARK: - Release (alternative distribution only)
+#
+# Skein is never on the App Store. iOS builds go to App Store Connect only to be
+# notarized for EU alternative marketplaces, then reach users through AltStore
+# PAL from a GitHub release. The order is upload → notarize → release; see
+# "Releasing" in README.md. The Release workflow runs `make release` in CI.
+
+RELEASE        := $(SWIFT) Scripts/appstoreconnect.swift
+
+setup-app-plan: ## Show what `make setup-app` would do
+	$(RELEASE) setup --dry-run
+
+setup-app: ## Register the bundle IDs and wait for the App Store Connect app record (once)
+	$(RELEASE) setup
+
+ARCHIVE        := build/Skein.xcarchive
+# Every upload needs a higher build number; a timestamp always increases.
+BUILD_NUMBER   ?= $(shell date +%Y%m%d%H%M)
+ASC_KEY_FILE    = $(patsubst ~/%,$(HOME)/%,$(ASC_PRIVATE_KEY_PATH))
+ASC_AUTH        = $(if $(strip $(ASC_KEY_ID)),-authenticationKeyPath "$(ASC_KEY_FILE)" \
+                    -authenticationKeyID $(ASC_KEY_ID) -authenticationKeyIssuerID $(ASC_ISSUER_ID))
+
+archive: generate ## Archive a Release iOS build (BUILD_NUMBER=… to override)
+	@test -n "$(strip $(TUIST_DEVELOPMENT_TEAM))" \
+		|| { echo "Set TUIST_DEVELOPMENT_TEAM in Local.env first."; exit 1; }
+	xcodebuild -workspace $(WORKSPACE) -scheme $(SCHEME) -configuration Release \
+		-destination 'generic/platform=iOS' -archivePath $(ARCHIVE) \
+		-allowProvisioningUpdates $(ASC_AUTH) \
+		DEVELOPMENT_TEAM=$(TUIST_DEVELOPMENT_TEAM) CURRENT_PROJECT_VERSION=$(BUILD_NUMBER) archive
+	@echo "Archived build $(BUILD_NUMBER) at $(ARCHIVE)"
+
+upload: archive ## Archive and upload to App Store Connect, ready for notarization
+	xcodebuild -exportArchive -archivePath $(ARCHIVE) -exportOptionsPlist ExportOptions.plist \
+		-exportPath build/export -allowProvisioningUpdates $(ASC_AUTH)
+
+listing-plan: ## Show the listing `make listing` would fill in
+	$(RELEASE) listing --dry-run
+
+listing: ## Fill in app info, age rating, version text and review notes (needs Local.env)
+	$(RELEASE) listing
+
+screenshots: $(WORKSPACE) ## Capture App Store Connect screenshots on the iPhone and iPad simulators
+	./Scripts/screenshots.sh
+
+screenshots-upload-plan: ## Show which screenshots `make screenshots-upload` would send
+	$(RELEASE) screenshots --dry-run
+
+screenshots-upload: ## Replace the version's screenshots with AppStore/screenshots (needs Local.env)
+	$(RELEASE) screenshots
+
+encryption-plan: ## Show the export compliance answers `make encryption` would file
+	$(RELEASE) encryption --dry-run
+
+encryption: ## File the export compliance declaration (once) and show whether Apple approved it
+	$(RELEASE) encryption
+
+notarize-plan: ## Show what `make notarize` would do
+	$(RELEASE) notarize --dry-run
+
+notarize: ## Attach the latest upload to the version and submit it for notarization
+	$(RELEASE) notarize
+
+status: ## Show version, notarization and ADP state
+	$(RELEASE) status
+
+altstore-register: ## Get an AltStore PAL marketplace token for App Store Connect (once)
+	$(RELEASE) altstore-register
+
+release-plan: ## Show what `make release` would do
+	$(RELEASE) release --dry-run
+
+release: ## Publish the notarized build as a GitHub release and add it to AltStore/source.json
+	$(RELEASE) release
+
 # MARK: - Housekeeping
 
 lint: ## Run SwiftLint over our own sources
@@ -119,13 +203,13 @@ lint: ## Run SwiftLint over our own sources
 	swiftlint lint --quiet Sources App
 
 config: ## Show the resolved bundle id and team
-	@echo "bundle id:        $(if $(TUIST_BUNDLE_ID),$(TUIST_BUNDLE_ID),dev.soumyamahunt.skein (default))"
+	@echo "bundle id:        $(if $(TUIST_BUNDLE_ID),$(TUIST_BUNDLE_ID),Project.swift's default)"
 	@echo "development team: $(if $(TUIST_DEVELOPMENT_TEAM),$(TUIST_DEVELOPMENT_TEAM),none — unsigned builds)"
 	@echo "swift:            $(SWIFT)"
 	@test -f Local.env || echo "(no Local.env — cp Local.env.example Local.env)"
 
 clean: ## Remove build output, keeping fetched dependencies
-	rm -rf .build/mac-dd .build/ios-dd .build/ios-app-dd
+	rm -rf .build/mac-dd .build/ios-dd .build/ios-app-dd .build/screenshots-dd build
 	$(SWIFT) package clean
 
 clean-all: clean ## Also remove the generated project and vendored OpenSSL

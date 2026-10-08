@@ -88,6 +88,35 @@ public struct TorrentStatus: Sendable, Identifiable, Hashable {
         errorMessage = error.isEmpty ? nil : error
     }
 
+    /// A status built by hand rather than read from the engine, for previews
+    /// and the app's screenshot mode.
+    public init(
+        infoHash: InfoHash, name: String, savePath: String = "", state: TorrentState,
+        progress: Double, totalWanted: Int64, downloadRate: Int = 0, uploadRate: Int = 0,
+        peerCount: Int = 0, seedCount: Int = 0, totalUploaded: Int64 = 0,
+        isPaused: Bool = false, isSequential: Bool = false, errorMessage: String? = nil
+    ) {
+        self.infoHash = infoHash
+        self.name = name
+        self.savePath = savePath
+        self.state = state
+        self.progress = progress
+        self.totalWanted = totalWanted
+        totalWantedDone = Int64(Double(totalWanted) * progress)
+        totalDownloaded = totalWantedDone
+        self.totalUploaded = totalUploaded
+        self.downloadRate = downloadRate
+        self.uploadRate = uploadRate
+        self.peerCount = peerCount
+        self.seedCount = seedCount
+        self.isPaused = isPaused
+        self.isSequential = isSequential
+        isFinished = progress >= 1
+        isSeeding = state == .seeding
+        hasMetadata = true
+        self.errorMessage = errorMessage
+    }
+
     /// Seconds until completion, or nil when stalled or already done.
     public var estimatedTimeRemaining: TimeInterval? {
         guard downloadRate > 0, totalWanted > totalWantedDone else { return nil }

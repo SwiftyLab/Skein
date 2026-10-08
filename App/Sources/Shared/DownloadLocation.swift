@@ -14,7 +14,8 @@ import Foundation
 /// a corrupt torrent, so the failure is worth preventing rather than debugging.
 @MainActor
 final class DownloadLocation {
-    private static let bookmarkKey = "dev.soumyamahunt.skein.downloadDirectoryBookmark"
+    /// UserDefaults is already per app, so the key needs no bundle-id prefix.
+    private static let bookmarkKey = "downloadDirectoryBookmark"
 
     private let defaults: UserDefaults
     private var accessedURL: URL?

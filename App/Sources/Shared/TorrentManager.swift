@@ -40,6 +40,12 @@ public final class TorrentManager {
     /// them, released when the move reports back.
     private var moveDestinations: [InfoHash: URL] = [:]
     private var byInfoHash: [InfoHash: Int] = [:]
+    /// Whether status polling has been asked to run, tracked here so the
+    /// event handler only hops to the session when that actually changes.
+    private var isPollingStatus = false
+    /// The last start or stop request, which the next one waits on so an add
+    /// followed quickly by a removal cannot reach the session out of order.
+    private var pollingChange: Task<Void, Never>?
 
     public var downloadRate: Int { torrents.reduce(0) { $0 + $1.downloadRate } }
     public var uploadRate: Int { torrents.reduce(0) { $0 + $1.uploadRate } }
@@ -88,6 +94,15 @@ public final class TorrentManager {
 
     public func start() async {
         guard session == nil else { return }
+        #if DEBUG
+        // Screenshots show fixed content and never start the engine.
+        if ScreenshotMode.isActive {
+            torrents = ScreenshotMode.torrents
+            reindex()
+            isRunning = true
+            return
+        }
+        #endif
         do {
             // Re-open sandbox access before the engine starts, so its very
             // first write already has permission.
@@ -113,7 +128,9 @@ public final class TorrentManager {
             for failure in outcome.failures {
                 record(failure.1.localizedDescription, for: failure.0)
             }
-            await session.startPollingStatus(every: .seconds(1))
+            // Status polling is not started here: it follows the torrent list,
+            // starting with the first `torrentAdded` event (restored torrents
+            // included), so an empty client does not wake every second.
             await notifier.requestAuthorizationIfNeeded()
             isRunning = true
         } catch {
@@ -142,7 +159,11 @@ public final class TorrentManager {
         await streamingServer?.stop()
         streamingServer = nil
         for infoHash in moveDestinations.keys { releaseMoveDestination(infoHash) }
+        // Stops polling as well.
         await session.shutdown()
+        pollingChange?.cancel()
+        pollingChange = nil
+        isPollingStatus = false
         eventTask?.cancel()
         eventTask = nil
         self.session = nil
@@ -457,6 +478,7 @@ public final class TorrentManager {
         case .torrentAdded(let status), .statusUpdated(let status):
             upsert(status)
             updateDockProgress()
+            updateStatusPolling()
         case .torrentRemoved(let hash):
             if let index = byInfoHash[hash] {
                 torrents.remove(at: index)
@@ -464,6 +486,7 @@ public final class TorrentManager {
             }
             notifier.forget(hash.value)
             updateDockProgress()
+            updateStatusPolling()
         case .torrentFailed(let hash, let message),
              .trackerFailed(let hash, let message):
             record(message, for: hash)
@@ -523,5 +546,30 @@ public final class TorrentManager {
     private func reindex() {
         byInfoHash = Dictionary(
             uniqueKeysWithValues: torrents.enumerated().map { ($1.infoHash, $0) })
+    }
+}
+
+// MARK: - Idle behaviour
+
+extension TorrentManager {
+    /// True when at least one torrent is neither finished nor paused.
+    public var hasActiveTransfers: Bool {
+        torrents.contains { !$0.isFinished && !$0.isPaused }
+    }
+
+    /// Polls for status only while there is something to report on.
+    fileprivate func updateStatusPolling() {
+        let wanted = !torrents.isEmpty
+        guard wanted != isPollingStatus, let session else { return }
+        isPollingStatus = wanted
+        let previous = pollingChange
+        pollingChange = Task {
+            await previous?.value
+            if wanted {
+                await session.startPollingStatus(every: .seconds(1))
+            } else {
+                await session.stopPollingStatus()
+            }
+        }
     }
 }

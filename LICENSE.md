@@ -1,73 +1,86 @@
-# License
+# Skein License
 
-Copyright (c) 2026 Soumya Ranjan Mahunt
+Copyright (c) 2026 Soumya Ranjan Mahunt. All rights reserved.
 
-Skein is source-available under the PolyForm Strict License 1.0.0, reproduced
-below. In short: you may build and run it for noncommercial purposes, but you
-may not redistribute it or distribute modified versions.
+In short: you may download Skein from an official channel and use it. You may
+not copy it, change it, build on it or pass it on to anyone else.
 
-This license covers the code in this repository only. The third-party
-components Skein builds against carry their own licenses, several of which
-grant broader rights than this one; see THIRD-PARTY-NOTICES.md.
+## 1. Definitions
 
----
+- **The Software** means Skein: the source code in this repository and every
+  compiled build of it, including documentation, icons and other assets.
+- **Official channel** means a place the licensor publishes Skein: this
+  repository, and app builds the licensor distributes through an app
+  marketplace, website or download link of the licensor's own.
+- **The licensor** is Soumya Ranjan Mahunt. **You** are the person or entity
+  accepting these terms.
 
-# PolyForm Strict License 1.0.0
+## 2. What you may do
 
-<https://polyformproject.org/licenses/strict/1.0.0>
+The licensor grants you a personal, non-exclusive, non-transferable,
+non-sublicensable, revocable license to:
 
-## Acceptance
+1. download compiled builds of the Software from an official channel, and
+   install and run them on devices you own or control, for your own personal,
+   noncommercial use; and
+2. view the source code in this repository.
 
-In order to get any license under these terms, you must agree to them as both strict obligations and conditions to all your licenses.
+Nothing else is permitted.
 
-## Copyright License
+## 3. What you may not do
 
-The licensor grants you a copyright license for the software to do everything you might do with the software that would otherwise infringe the licensor's copyright in it for any permitted purpose, other than distributing the software or making changes or new works based on the software.
+Except as section 2 allows, you may not, and may not let anyone else:
 
-## Patent License
+1. copy, reproduce or mirror the Software, in source or compiled form;
+2. redistribute, publish, sell, rent, lend, sublicense or otherwise make the
+   Software available to anyone else, including by uploading it to another
+   marketplace, source, repository or website;
+3. modify, translate, adapt or create derivative works based on the Software,
+   including forks and patches;
+4. build, compile or package the Software from source;
+5. decompile, disassemble or reverse engineer compiled builds, except where
+   the law allows it despite this restriction;
+6. remove or alter any copyright, license or attribution notice; or
+7. use the Software for any commercial purpose.
 
-The licensor grants you a patent license for the software that covers patent claims the licensor can license, or becomes able to license, that you would infringe by using the software.
+## 4. Third-party components
 
-## Noncommercial Purposes
+The Software is built with third-party components listed in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md), including libtorrent, Boost,
+OpenSSL, VLCKit and FeedKit. Each is licensed to you under its own terms, not
+under this license, and nothing here restricts any right those terms give you.
+In particular, where VLCKit's GNU Lesser General Public License 2.1 lets you
+modify the library, replace it with your own version, or reverse engineer the
+Software to debug such modifications, sections 3.3 to 3.5 do not prevent it.
 
-Any noncommercial purpose is a permitted purpose.
+## 5. Ownership
 
-## Personal Uses
+The Software is licensed, not sold. The licensor keeps all rights, title and
+interest in it, including all intellectual property rights, and every right
+not expressly granted here.
 
-Personal use for research, experiment, and testing for the benefit of public knowledge, personal study, private entertainment, hobby projects, amateur pursuits, or religious observance, without any anticipated commercial application, is use for a permitted purpose.
+## 6. Termination
 
-## Noncommercial Organizations
+This license ends automatically if you break any of its terms. When it ends,
+you must stop using the Software and delete every copy you have. Sections 3,
+5, 7 and 8 survive termination.
 
-Use by any charitable organization, educational institution, public research organization, public safety or health organization, environmental protection organization, or government institution is use for a permitted purpose regardless of the source of funding or obligations resulting from the funding.
+## 7. No warranty
 
-## Fair Use
+***The Software is provided "as is", without any warranty of any kind, express
+or implied, including merchantability, fitness for a particular purpose and
+non-infringement.***
 
-You may have "fair use" rights for the software under the law. These terms do not limit them.
+## 8. Limitation of liability
 
-## No Other Rights
+***As far as the law allows, the licensor will not be liable for any damages
+arising from these terms or from the use of, or inability to use, the
+Software, under any kind of legal claim.***
 
-These terms do not allow you to sublicense or transfer any of your licenses to anyone else, or prevent the licensor from granting licenses to anyone else.  These terms do not imply any other licenses.
+You are responsible for what you download and share with the Software, and
+for complying with the laws that apply to it.
 
-## Patent Defense
+## 9. Fair use and statutory rights
 
-If you make any written claim that the software infringes or contributes to infringement of any patent, your patent license for the software granted under these terms ends immediately. If your company makes such a claim, your patent license ends immediately for work on behalf of your company.
-
-## Violations
-
-The first time you are notified in writing that you have violated any of these terms, or done anything with the software not covered by your licenses, your licenses can nonetheless continue if you come into full compliance with these terms, and take practical steps to correct past violations, within 32 days of receiving notice.  Otherwise, all your licenses end immediately.
-
-## No Liability
-
-***As far as the law allows, the software comes as is, without any warranty or condition, and the licensor will not be liable to you for any damages arising out of these terms or the use or nature of the software, under any kind of legal claim.***
-
-## Definitions
-
-The **licensor** is the individual or entity offering these terms, and the **software** is the software the licensor makes available under these terms.
-
-**You** refers to the individual or entity agreeing to these terms.
-
-**Your company** is any legal entity, sole proprietorship, or other kind of organization that you work for, plus all organizations that have control over, are under the control of, or are under common control with that organization.  **Control** means ownership of substantially all the assets of an entity, or the power to direct its management and policies by vote, contract, or otherwise.  Control can be direct or indirect.
-
-**Your licenses** are all the licenses granted to you for the software under these terms.
-
-**Use** means anything you do with the software requiring one of your licenses.
+These terms do not limit any right you have under applicable law that cannot
+be waived by contract, such as fair use.

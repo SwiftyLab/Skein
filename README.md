@@ -114,25 +114,110 @@ legacy provider. It is safe because libtorrent carries its own RC4 (from
 libtomcrypt) and does the Diffie-Hellman exchange with Boost.Multiprecision — it
 only needs OpenSSL for TLS, SSL torrents, and hashing.
 
+## Releasing
+
+The iOS app never goes on the App Store. Builds are uploaded to App Store
+Connect only to be **notarized** for alternative distribution, which checks
+security, privacy and that the app works, not content rules. Users then install
+through [AltStore PAL](https://faq.altstore.io/developers/distribute-with-altstore-pal).
+`Scripts/appstoreconnect.swift` does the API work; every step is safe to re-run,
+and each `*-plan` target previews its step without sending anything.
+
+This publishes a binary, so read
+[Before distributing a build](THIRD-PARTY-NOTICES.md#before-distributing-a-build)
+first.
+
+### One-time setup
+
+1. As Account Holder, accept the current Apple Developer Program License
+   Agreement; its Attachment 14 covers alternative distribution.
+2. Create an App Store Connect API key with the Admin role, or App Manager
+   with access to Certificates, Identifiers & Profiles so it can register
+   bundle IDs, and fill in the `ASC_*`, `REVIEW_*` and `ALTSTORE_*` values in
+   `Local.env`, along with `DEVELOPER_NAME`, `SUPPORT_URL` and
+   `PRIVACY_POLICY_URL`. Nothing personal is written into the scripts: names,
+   URLs and identifiers all come from `Local.env`, or from what the repository
+   already defines (VLCKit's pinned revision and the usage strings in
+   `Project.swift`, the accent colour in the asset catalog).
+3. `make setup-app` registers the app and share extension bundle IDs, then
+   checks for the app record. App Store Connect has no API for creating apps,
+   so if it is missing, the command opens App Store Connect, prints what to
+   enter under Apps › + › New App, and waits until the app appears.
+4. `make altstore-register` prints a marketplace token. Add it under Users and
+   Access › Integrations › Marketplace, select Skein and turn on notifications.
+   This step has no API.
+5. `make listing` fills in the metadata notarization still requires. Its text
+   lives at the top of the script.
+6. `make screenshots` captures the listing screenshots on a 6.9" iPhone and a
+   13" iPad simulator, using a Debug-only screenshot mode with fixed sample
+   torrents (`App/Sources/Shared/ScreenshotMode.swift`). Check
+   `AppStore/screenshots/`, commit it, then `make screenshots-upload` replaces
+   the version's screenshots; unchanged sets are skipped.
+7. Export compliance needs nothing filed. Skein uses only standard encryption
+   and is not declared for France, which needs no export documentation, so
+   every build answers `ITSAppUsesNonExemptEncryption = NO` (`Project.swift`)
+   and `make notarize` answers older builds the same way. Distributing in France
+   would need the French ANSSI declaration: set `encryption.france` to true and
+   `ENCRYPTION_FRANCE_DOCUMENT` to its PDF, then `make encryption` files it.
+   Using non-OS encryption may also mean a year-end self-classification report
+   to the U.S. Bureau of Industry and Security.
+8. App Privacy is the one thing left by hand, because the API has no endpoint
+   for it: App Store Connect › App Privacy › Get Started › **No, we do not
+   collect data from this app**, then Publish.
+9. For the Release workflow, add repository secrets `ASC_ISSUER_ID`,
+   `ASC_KEY_ID` and `ASC_PRIVATE_KEY` (the whole `.p8` file, including its
+   `BEGIN`/`END` lines), and repository variables `TUIST_BUNDLE_ID`,
+   `DEVELOPER_NAME` and `PRIVACY_POLICY_URL` with the same values as in
+   `Local.env`. The
+   workflow pushes to `main`, so if `main` is protected, allow GitHub Actions to
+   bypass it.
+
+### Each release
+
+```sh
+make upload      # archive with a timestamp build number and upload
+make notarize    # wait for processing, attach the build, submit for notarization
+make status      # until the version shows an ADP
+```
+
+Then run the **Release** workflow (Actions › Release › Run workflow, or
+`gh workflow run release.yml`). `make release` does the same locally, but
+leaves committing `AltStore/source.json` to you, and needs `gh` signed in.
+
+Export compliance is answered by each build's Info.plist; see step 7 above. The answers live in `encryption` at the top of the script. They
+are a legal declaration about the encryption Skein ships (OpenSSL, BitTorrent
+protocol encryption), so change them only if that changes.
+
+Each version becomes a GitHub release tagged `v<version>-<build>`, with the
+package's files as assets, uploaded byte for byte because PAL checks each one
+against `manifest.json`. `AltStore/source.json` lists every release, newest
+first, with `assetURLs` pointing at those assets. Users add
+`https://raw.githubusercontent.com/<owner>/<repo>/main/AltStore/source.json`
+(`make release` prints it)
+in AltStore PAL. Deleting a release breaks that version for anyone AltStore
+would fall back to, so leave old releases in place.
+
 ## Licensing
 
-Skein's own source is under the [PolyForm Strict License 1.0.0](LICENSE.md):
-build it and run it for noncommercial purposes, but do not redistribute it or
-distribute modified versions.
+Skein is under a [custom proprietary license](LICENSE.md): anyone may download
+official builds and use them for personal, noncommercial purposes, and read the
+source here. Copying, modifying, building from source and redistributing are
+not permitted. The build instructions above are for the author.
 
-That covers this repository's code only. libtorrent, Boost, OpenSSL, VLCKit and
-FeedKit each carry their own licenses, none of which Skein's license overrides —
-see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). They are fetched at build
+That covers Skein's own code and builds only. libtorrent, Boost, OpenSSL,
+VLCKit and FeedKit each carry their own licenses, none of which Skein's license
+overrides, and the license says so explicitly — see
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). They are fetched at build
 time rather than vendored here, so publishing this repository distributes none
 of them.
 
 Two things worth knowing:
 
-**Publishing a compiled build is a different question.** A binary embeds
-VLCKit, which is LGPL-2.1 and grants recipients rights that a no-redistribution
-term cannot take away. Source-only publication avoids this entirely, which is
-why the repository is set up that way. The notices file lists what would have to
-change first.
+**Publishing a compiled build carries obligations.** A binary embeds VLCKit,
+which is LGPL-2.1, so each release has to ship its license text and a way to get
+its source, and recipients keep the right to modify and relink it. The license
+carves those rights out rather than contradicting them; the notices file lists
+what each release has to include.
 
 **A public GitHub repository can be forked.** GitHub's Terms of Service §D.5
 say that by making a repository public you grant other users a licence to
@@ -142,5 +227,5 @@ existing elsewhere on GitHub is unacceptable, a private repository is the only
 reliable answer.
 
 Separately: Apple does not allow torrent clients on the App Store, so the iOS
-target is intended for personal dev-signed builds. macOS distributes normally
-via Developer ID.
+app is released only through EU alternative marketplaces (see
+[Releasing](#releasing)). macOS distributes normally via Developer ID.

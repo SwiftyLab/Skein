@@ -26,7 +26,8 @@ final class BackgroundCoordinator {
     /// them the same way means the two can never disagree — and a mismatch is
     /// not a build error but a refused registration at launch.
     private static let bundleIdentifier =
-        Bundle.main.bundleIdentifier ?? "dev.soumyamahunt.skein"
+        // Always set for an app bundle; the fallback only keeps this non-optional.
+        Bundle.main.bundleIdentifier ?? "Skein"
     static var continuedIdentifier: String { "\(bundleIdentifier).continued" }
     static var processingIdentifier: String { "\(bundleIdentifier).processing" }
 
@@ -71,8 +72,15 @@ final class BackgroundCoordinator {
         try BGTaskScheduler.shared.submit(request)
     }
 
-    /// Queues an opportunistic catch-up run.
+    /// Queues an opportunistic catch-up run, or withdraws a queued one when
+    /// nothing is left to download, so an idle app is not woken for nothing.
     func scheduleProcessing() {
+        // A stopped engine says nothing about what is left to do, so fall back
+        // to queueing rather than letting the chain lapse.
+        if let manager, manager.isRunning, !manager.hasActiveTransfers {
+            BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.processingIdentifier)
+            return
+        }
         let request = BGProcessingTaskRequest(identifier: Self.processingIdentifier)
         request.requiresNetworkConnectivity = true
         // Left false so catch-up is not restricted to charging.
@@ -108,21 +116,24 @@ final class BackgroundCoordinator {
     }
 
     private func runProcessing(_ task: BGProcessingTask) async {
-        // Queue the next one immediately: a handler that forgets to reschedule
-        // silently stops the whole mechanism.
-        scheduleProcessing()
-
+        // Rescheduled on the way out rather than up front, once it is known
+        // whether anything is still unfinished. Both exits must do it: a
+        // handler that forgets to reschedule silently stops the whole mechanism.
         task.expirationHandler = { [weak self] in
-            Task { @MainActor in await self?.saveResumeData() }
+            Task { @MainActor in
+                self?.scheduleProcessing()
+                await self?.saveResumeData()
+            }
         }
 
         let deadline = ContinuousClock.now.advanced(by: .seconds(240))
         while ContinuousClock.now < deadline, !Task.isCancelled {
             guard let manager, manager.isRunning else { break }
-            if manager.torrents.allSatisfy({ $0.isFinished || $0.isPaused }) { break }
+            if !manager.hasActiveTransfers { break }
             try? await Task.sleep(for: .seconds(5))
         }
 
+        scheduleProcessing()
         await saveResumeData()
         task.setTaskCompleted(success: true)
     }

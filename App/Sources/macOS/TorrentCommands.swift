@@ -46,7 +46,7 @@ struct TorrentCommands: Commands {
 extension Notification.Name {
     /// Derived from the bundle identifier so it stays unique if that changes.
     static let showAddTorrent = Notification.Name(
-        "\(Bundle.main.bundleIdentifier ?? "dev.soumyamahunt.skein").showAdd")
+        "\(Bundle.main.bundleIdentifier ?? "Skein").showAdd")
 }
 
 /// Lets menu commands reach the manager owned by the focused window.

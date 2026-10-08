@@ -133,6 +133,16 @@ struct PhoneContentView: View {
             .sheet(isPresented: $isShowingFeeds) {
                 NavigationStack { FeedsView() }
             }
+            #if DEBUG
+            .task {
+                switch ScreenshotMode.screen {
+                case "add": isShowingAddSheet = true
+                case "settings": isShowingSettings = true
+                case "feeds": isShowingFeeds = true
+                default: break
+                }
+            }
+            #endif
             .confirmationDialog(
                 "Remove Torrent?",
                 isPresented: .init(

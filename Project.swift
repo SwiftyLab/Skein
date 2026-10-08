@@ -25,7 +25,9 @@ func setting(_ value: String, default fallback: String) -> String {
 
 let bundleId = setting(
     Environment.bundleId.getString(default: ""),
-    default: "dev.soumyamahunt.skein")
+    // A placeholder, so a fresh clone builds unsigned; real builds set
+    // TUIST_BUNDLE_ID in Local.env.
+    default: "com.example.skein")
 let developmentTeam = Environment.developmentTeam.getString(default: "")
 
 /// The share extension hands `.torrent` files to the app through an app group,
@@ -33,6 +35,21 @@ let developmentTeam = Environment.developmentTeam.getString(default: "")
 /// your developer account. Off by default, so a build does not demand account
 /// setup; magnet links are shared without it either way.
 let usesAppGroup = Environment.enableAppGroup.getString(default: "") == "1"
+
+/// Export compliance, answered by every build so App Store Connect never asks.
+/// Skein uses only standard encryption (OpenSSL, BitTorrent protocol
+/// encryption) and is not declared for France, which needs no export
+/// documentation, so Apple's guidance is NO. Distributing in France, or adding
+/// proprietary cryptography, needs a declaration (`make encryption`); the code
+/// Apple issues for it goes in TUIST_EXPORT_COMPLIANCE_CODE, which switches
+/// this to YES with that code.
+let exportComplianceCode = Environment.exportComplianceCode.getString(default: "")
+let exportCompliance: [String: Plist.Value] = exportComplianceCode.isEmpty
+    ? ["ITSAppUsesNonExemptEncryption": false]
+    : [
+        "ITSAppUsesNonExemptEncryption": true,
+        "ITSEncryptionExportComplianceCode": .string(exportComplianceCode),
+    ]
 let appGroup = usesAppGroup ? "group.\(bundleId)" : ""
 
 /// Signing settings, omitted entirely when no team is configured, so unsigned
@@ -67,6 +84,11 @@ let project = Project(
             // target must too, including this app.
             "SWIFT_OBJC_INTEROP_MODE": "objcxx",
             "SWIFT_VERSION": "6.0",
+            // Shared by the app and its share extension, which must match.
+            // `make archive` overrides the build number with a timestamp, since
+            // every upload to App Store Connect needs a higher one.
+            "MARKETING_VERSION": "1.0",
+            "CURRENT_PROJECT_VERSION": "1",
         ]
     ),
     targets: [
@@ -82,6 +104,8 @@ let project = Project(
             deploymentTargets: .iOS("26.0"),
             infoPlist: .extendingDefault(with: [
                 "CFBundleDisplayName": "Skein",
+                "CFBundleShortVersionString": "$(MARKETING_VERSION)",
+                "CFBundleVersion": "$(CURRENT_PROJECT_VERSION)",
                 // One source of truth for the group, read at runtime by both
                 // targets rather than hardcoded in each.
                 "SKAppGroup": .string(appGroup),
@@ -114,6 +138,8 @@ let project = Project(
             deploymentTargets: .multiplatform(iOS: "26.0", macOS: "26.0"),
             infoPlist: .extendingDefault(with: [
                 "CFBundleDisplayName": "Skein",
+                "CFBundleShortVersionString": "$(MARKETING_VERSION)",
+                "CFBundleVersion": "$(CURRENT_PROJECT_VERSION)",
                 "LSApplicationCategoryType": "public.app-category.utilities",
                 // UIBackgroundModes and the BGTaskScheduler identifiers are
                 // ignored on macOS, so one shared plist covers both platforms.
@@ -145,6 +171,11 @@ let project = Project(
                 // Not UISupportsDocumentBrowser — that is for apps whose main
                 // interface is a document browser, which this is not.
                 "LSSupportsOpeningDocumentsInPlace": true,
+                // Shows Documents, where downloads land by default, in the
+                // Files app under On My iPhone › Skein, and in Finder when the
+                // device is connected. Without it, iOS has no way to get a
+                // finished download out of the app. Ignored on macOS.
+                "UIFileSharingEnabled": true,
 
                 // Opening .torrent files from Files, Mail and share sheets.
                 "CFBundleDocumentTypes": [
@@ -165,7 +196,7 @@ let project = Project(
                         ],
                     ]
                 ],
-            ]),
+            ].merging(exportCompliance) { _, new in new }),
             sources: [
                 .glob("App/Sources/Shared/**"),
                 .glob("App/Sources/iOS/**", compilationCondition: .when([.ios])),

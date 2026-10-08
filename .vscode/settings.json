@@ -1,0 +1,11 @@
+{
+  // Keep Vendor/libtorrent out of Source Control: don't surface its
+  // modifications in the parent repo, and don't open it as its own repository.
+  "git.ignoreSubmodules": true,
+  "git.detectSubmodules": false,
+
+  // GitLens runs its own repository scan and does not read git.detectSubmodules,
+  // so exclude Vendor/ from discovery too. This replaces the default list,
+  // hence node_modules is repeated here.
+  "git.repositoryScanIgnoredFolders": ["node_modules", "Vendor"]
+}

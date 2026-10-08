@@ -90,7 +90,7 @@ public actor TorrentSession {
             }
             continuation.finish()
         }
-        thread.name = "dev.soumyamahunt.skein.alert-pump"
+        thread.name = "TorrentKit.alert-pump"
         // libtorrent hands over sizeable alert batches; the default 512 KB is
         // tight for the conversion work done per batch.
         thread.stackSize = 1 << 20
