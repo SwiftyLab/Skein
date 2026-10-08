@@ -934,6 +934,12 @@ func publishRelease() async throws {
     let minOS = attribute(build, "minOsVersion") as? String ?? "26.0"
     let tag = "v\(marketing)-\(buildNumber)"
     print("  \(marketing) (\(buildNumber)), iOS \(minOS)+, ADP \(adpID)")
+    // The workflow's macOS job attaches its build to the same release, with the same version numbers.
+    if let output = ProcessInfo.processInfo.environment["GITHUB_OUTPUT"], let handle = FileHandle(forWritingAtPath: output) {
+        handle.seekToEndOfFile()
+        handle.write(Data("tag=\(tag)\nversion=\(marketing)\nbuild=\(buildNumber)\n".utf8))
+        try handle.close()
+    }
 
     var assets = (try? JSONSerialization.jsonObject(with: Data(try run(["gh", "release", "view", tag, "--repo", repo, "--json", "assets"], allowFailure: true).output.utf8))) as? JSON
     if let existing = assets?["assets"] as? [JSON], existing.contains(where: { $0["name"] as? String == "manifest.json" }) {
@@ -984,9 +990,11 @@ func publishRelease() async throws {
         let notes = """
         Skein \(marketing) (build \(buildNumber)) for iOS \(minOS) and later, notarized for alternative distribution.
 
-        Install through AltStore PAL by adding this source: \(raw)/\(sourceFile.relativePath)
+        **iPhone and iPad:** install through AltStore PAL by adding this source: \(raw)/\(sourceFile.relativePath)
 
-        These files are an Alternative Distribution Package; AltStore checks each one against `manifest.json`, so they are only useful through AltStore. Skein is licensed under [LICENSE.md](https://github.com/\(repo)/blob/\(tag)/LICENSE.md). It includes VLCKit, licensed under the GNU LGPL 2.1; its license and the exact source used are at \(vlcKitSource). Other components are listed in [THIRD-PARTY-NOTICES.md](https://github.com/\(repo)/blob/\(tag)/THIRD-PARTY-NOTICES.md).
+        **Mac:** download `Skein-\(marketing)-\(buildNumber)-macOS.zip` below (signed with Developer ID and notarized by Apple), unzip it and move Skein to Applications. It is attached separately, shortly after this release appears.
+
+        The other files are an Alternative Distribution Package; AltStore checks each one against `manifest.json`, so they are only useful through AltStore. Skein is licensed under [LICENSE.md](https://github.com/\(repo)/blob/\(tag)/LICENSE.md). It includes VLCKit, licensed under the GNU LGPL 2.1; its license and the exact source used are at \(vlcKitSource). Other components are listed in [THIRD-PARTY-NOTICES.md](https://github.com/\(repo)/blob/\(tag)/THIRD-PARTY-NOTICES.md).
         """
         if assets == nil {
             try run(["gh", "release", "create", tag, "--repo", repo, "--title", "Skein \(marketing) (\(buildNumber))", "--notes", notes] + files.map(\.path))
@@ -1003,7 +1011,8 @@ func publishRelease() async throws {
     var assetURLs: [String: String] = [:]
     var size = 0
     for asset in uploaded {
-        guard let name = asset["name"] as? String, let url = asset["url"] as? String else { continue }
+        // The macOS job's zip shares the release but isn't part of the ADP.
+        guard let name = asset["name"] as? String, let url = asset["url"] as? String, !name.hasSuffix("-macOS.zip") else { continue }
         assetURLs[(name as NSString).deletingPathExtension] = url
         size += asset["size"] as? Int ?? 0
     }

@@ -167,8 +167,8 @@ first.
 9. For the Release workflow, add repository secrets `ASC_ISSUER_ID`,
    `ASC_KEY_ID` and `ASC_PRIVATE_KEY` (the whole `.p8` file, including its
    `BEGIN`/`END` lines), and repository variables `TUIST_BUNDLE_ID`,
-   `DEVELOPER_NAME` and `PRIVACY_POLICY_URL` with the same values as in
-   `Local.env`. The
+   `TUIST_DEVELOPMENT_TEAM`, `DEVELOPER_NAME` and `PRIVACY_POLICY_URL` with the
+   same values as in `Local.env`. The
    workflow pushes to `main`, so if `main` is protected, allow GitHub Actions to
    bypass it.
 
@@ -196,6 +196,31 @@ first, with `assetURLs` pointing at those assets. Users add
 (`make release` prints it)
 in AltStore PAL. Deleting a release breaks that version for anyone AltStore
 would fall back to, so leave old releases in place.
+
+### macOS
+
+The Mac app isn't on any store. It is signed with Developer ID, notarized by
+Apple (an automated malware scan that takes minutes, unrelated to the iOS
+notarization review) and attached to the same GitHub release as the iOS build,
+as `Skein-<version>-<build>-macOS.zip`. It is universal, for Apple silicon and
+Intel Macs.
+
+Signing uses a Developer ID Application certificate from the keychain, not
+Apple's cloud-managed one, which refuses App Store Connect API keys even with
+the Admin role (FB16835802). Create it once in Xcode › Settings › Accounts ›
+Manage Certificates › + › Developer ID Application (Account Holder only).
+
+The Release workflow does this after the iOS step, in its `macos` job, at the
+same version and build number. It needs the repository variable
+`TUIST_DEVELOPMENT_TEAM` and the certificate as two secrets: export it from
+Keychain Access as a `.p12` with a password, then add `DEVELOPER_ID_P12`
+(`base64 -i DeveloperID.p12 | pbcopy`) and `DEVELOPER_ID_P12_PASSWORD`. A
+release that already has a Mac zip is skipped. Locally:
+
+```sh
+make mac-release                                  # build/mac/Skein-<version>-<build>-macOS.zip
+make mac-release RELEASE_TAG=v1.0-<build> VERSION=1.0 BUILD_NUMBER=<build>   # and attach it
+```
 
 ## Licensing
 

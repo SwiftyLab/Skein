@@ -52,7 +52,8 @@ endif
 .PHONY: help bootstrap openssl build test test-live generate assets \
         app-macos app-macos-signed app-ios run clean clean-all lint config \
         setup-app setup-app-plan archive upload listing listing-plan \
-        screenshots screenshots-upload screenshots-upload-plan encryption encryption-plan notarize notarize-plan status \
+        screenshots screenshots-upload screenshots-upload-plan encryption encryption-plan \
+        mac-archive mac-release mac-notarize notarize notarize-plan status \
         altstore-register release release-plan
 
 help: ## Show this help
@@ -155,6 +156,35 @@ archive: generate ## Archive a Release iOS build (BUILD_NUMBER=… to override)
 upload: archive ## Archive and upload to App Store Connect, ready for notarization
 	xcodebuild -exportArchive -archivePath $(ARCHIVE) -exportOptionsPlist ExportOptions.plist \
 		-exportPath build/export -allowProvisioningUpdates $(ASC_AUTH)
+
+# The Mac app ships outside any store: Developer ID signed, notarized by Apple,
+# and attached to the same GitHub release as the iOS build. VERSION and
+# BUILD_NUMBER let it match that build; RELEASE_TAG names the release.
+MAC_ARCHIVE    := build/Skein-macOS.xcarchive
+
+# Signed directly with the Developer ID Application certificate in the keychain
+# rather than automatically: Apple's cloud-managed Developer ID signing refuses
+# App Store Connect API keys, even Admin ones (FB16835802). Nothing Skein uses on
+# the Mac needs a provisioning profile.
+mac-archive: generate ## Archive a universal Release macOS build (VERSION=… BUILD_NUMBER=… to override)
+	@test -n "$(strip $(TUIST_DEVELOPMENT_TEAM))" \
+		|| { echo "Set TUIST_DEVELOPMENT_TEAM in Local.env first."; exit 1; }
+	@security find-identity -v -p codesigning | grep -q "Developer ID Application: .*($(TUIST_DEVELOPMENT_TEAM))" \
+		|| { echo "No Developer ID Application certificate for team $(TUIST_DEVELOPMENT_TEAM) in the keychain."; \
+		     echo "Create one in Xcode › Settings › Accounts › Manage Certificates › + (Account Holder only)."; exit 1; }
+	xcodebuild -workspace $(WORKSPACE) -scheme $(SCHEME) -configuration Release \
+		-destination 'generic/platform=macOS' -archivePath $(MAC_ARCHIVE) \
+		DEVELOPMENT_TEAM=$(TUIST_DEVELOPMENT_TEAM) CODE_SIGN_STYLE=Manual \
+		CODE_SIGN_IDENTITY="Developer ID Application" PROVISIONING_PROFILE_SPECIFIER= \
+		CURRENT_PROJECT_VERSION=$(BUILD_NUMBER) $(if $(VERSION),MARKETING_VERSION=$(VERSION)) archive
+
+mac-release: mac-archive ## Sign with Developer ID, notarize, staple and zip the Mac app (RELEASE_TAG=… to attach it)
+	ASC_KEY_FILE="$(ASC_KEY_FILE)" ASC_KEY_ID="$(ASC_KEY_ID)" ASC_ISSUER_ID="$(ASC_ISSUER_ID)" \
+		RELEASE_TAG="$(RELEASE_TAG)" ./Scripts/mac-release.sh
+
+mac-notarize: ## Retry notarizing, stapling and zipping the last Mac export without rebuilding
+	ASC_KEY_FILE="$(ASC_KEY_FILE)" ASC_KEY_ID="$(ASC_KEY_ID)" ASC_ISSUER_ID="$(ASC_ISSUER_ID)" \
+		RELEASE_TAG="$(RELEASE_TAG)" ./Scripts/mac-release.sh --notarize-only
 
 listing-plan: ## Show the listing `make listing` would fill in
 	$(RELEASE) listing --dry-run
