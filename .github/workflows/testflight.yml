@@ -1,0 +1,99 @@
+# Keeps an unexpired build in TestFlight for internal testing. TestFlight builds
+# expire after 90 days; once a week this checks the newest one and, when it has
+# BETA_RENEW_DAYS (default 14) or fewer left, builds and uploads a fresh one.
+# Internal testers get it automatically (`make beta` set the group up that way).
+#
+# Run it by hand with "force" to upload a build regardless.
+#
+# Needs the same secrets as the Release workflow (ASC_ISSUER_ID, ASC_KEY_ID,
+# ASC_PRIVATE_KEY) and repository variables TUIST_BUNDLE_ID,
+# TUIST_DEVELOPMENT_TEAM and TUIST_ENABLE_APP_GROUP (as in Local.env).
+# Signing uses Xcode's cloud-managed certificates through the API key, which
+# works for App Store Connect uploads (unlike Developer ID) with an Admin key.
+name: TestFlight
+
+on:
+  schedule:
+    # Mondays, 06:00 UTC.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Upload a new build even if the current one isn't expiring
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: testflight
+  cancel-in-progress: false
+
+env:
+  ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+  ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+  ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+  TUIST_BUNDLE_ID: ${{ vars.TUIST_BUNDLE_ID }}
+
+jobs:
+  check:
+    # The script needs CryptoKit, so macOS.
+    runs-on: macos-latest
+    timeout-minutes: 10
+    outputs:
+      needed: ${{ steps.check.outputs.needed }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+      - id: check
+        run: make beta-check
+        env:
+          BETA_RENEW_DAYS: ${{ vars.BETA_RENEW_DAYS }}
+
+  build:
+    needs: check
+    if: needs.check.outputs.needed == 'true' || inputs.force
+    runs-on: macos-latest
+    # A cold build compiles libtorrent and, without a cache hit, OpenSSL; then
+    # App Store Connect processing can take up to 30 minutes.
+    timeout-minutes: 150
+    env:
+      TUIST_DEVELOPMENT_TEAM: ${{ vars.TUIST_DEVELOPMENT_TEAM }}
+      TUIST_ENABLE_APP_GROUP: ${{ vars.TUIST_ENABLE_APP_GROUP }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Install Tuist
+        run: brew install tuist
+
+      # Shared with the Release workflow's caches: same keys, same contents.
+      - uses: actions/cache@v4
+        with:
+          path: Vendor/boost
+          key: boost-${{ hashFiles('Scripts/bootstrap.sh') }}
+      - uses: actions/cache@v4
+        with:
+          path: Vendor/openssl
+          key: openssl-${{ hashFiles('Scripts/build-openssl.sh') }}
+
+      - name: Fetch dependencies
+        run: make bootstrap openssl
+
+      - name: Archive and upload
+        run: |
+          key="$RUNNER_TEMP/AuthKey.p8"
+          printf '%s\n' "$ASC_PRIVATE_KEY" > "$key"
+          make upload ASC_PRIVATE_KEY_PATH="$key" VERSION="${{ needs.check.outputs.version }}"
+          rm -f "$key"
+
+      - name: Notes and export compliance
+        run: make beta

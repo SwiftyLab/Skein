@@ -28,6 +28,7 @@ APP            := $(DERIVED_MAC)/Build/Products/Debug/Skein.app
 ifneq ($(wildcard Local.env),)
 TUIST_BUNDLE_ID ?= $(shell sed -n 's/^[[:space:]]*TUIST_BUNDLE_ID[[:space:]]*=[[:space:]]*//p' Local.env)
 TUIST_DEVELOPMENT_TEAM ?= $(shell sed -n 's/^[[:space:]]*TUIST_DEVELOPMENT_TEAM[[:space:]]*=[[:space:]]*//p' Local.env)
+TUIST_ENABLE_APP_GROUP ?= $(shell sed -n 's/^[[:space:]]*TUIST_ENABLE_APP_GROUP[[:space:]]*=[[:space:]]*//p' Local.env)
 TUIST_EXPORT_COMPLIANCE_CODE ?= $(shell sed -n 's/^[[:space:]]*TUIST_EXPORT_COMPLIANCE_CODE[[:space:]]*=[[:space:]]*//p' Local.env)
 # The App Store Connect key, so `make upload` signs and uploads without an
 # Apple ID signed in to Xcode. The release script reads the rest itself.
@@ -38,6 +39,7 @@ endif
 export TUIST_BUNDLE_ID
 export TUIST_DEVELOPMENT_TEAM
 export TUIST_EXPORT_COMPLIANCE_CODE
+export TUIST_ENABLE_APP_GROUP
 
 # A team identifier is about running on an iOS device, so it should not make a
 # quick local Mac build start demanding certificates. macOS therefore builds
@@ -53,7 +55,7 @@ endif
         app-macos app-macos-signed app-ios run clean clean-all lint config \
         setup-app setup-app-plan archive upload listing listing-plan \
         screenshots screenshots-upload screenshots-upload-plan encryption encryption-plan \
-        mac-archive mac-release mac-notarize notarize notarize-plan status \
+        mac-archive mac-release mac-notarize beta beta-plan beta-check notarize notarize-plan status \
         altstore-register release release-plan
 
 help: ## Show this help
@@ -144,13 +146,14 @@ ASC_KEY_FILE    = $(patsubst ~/%,$(HOME)/%,$(ASC_PRIVATE_KEY_PATH))
 ASC_AUTH        = $(if $(strip $(ASC_KEY_ID)),-authenticationKeyPath "$(ASC_KEY_FILE)" \
                     -authenticationKeyID $(ASC_KEY_ID) -authenticationKeyIssuerID $(ASC_ISSUER_ID))
 
-archive: generate ## Archive a Release iOS build (BUILD_NUMBER=… to override)
+archive: generate ## Archive a Release iOS build (VERSION=… BUILD_NUMBER=… to override)
 	@test -n "$(strip $(TUIST_DEVELOPMENT_TEAM))" \
 		|| { echo "Set TUIST_DEVELOPMENT_TEAM in Local.env first."; exit 1; }
 	xcodebuild -workspace $(WORKSPACE) -scheme $(SCHEME) -configuration Release \
 		-destination 'generic/platform=iOS' -archivePath $(ARCHIVE) \
 		-allowProvisioningUpdates $(ASC_AUTH) \
-		DEVELOPMENT_TEAM=$(TUIST_DEVELOPMENT_TEAM) CURRENT_PROJECT_VERSION=$(BUILD_NUMBER) archive
+		DEVELOPMENT_TEAM=$(TUIST_DEVELOPMENT_TEAM) CURRENT_PROJECT_VERSION=$(BUILD_NUMBER) \
+		$(if $(VERSION),MARKETING_VERSION=$(VERSION)) archive
 	@echo "Archived build $(BUILD_NUMBER) at $(ARCHIVE)"
 
 upload: archive ## Archive and upload to App Store Connect, ready for notarization
@@ -185,6 +188,15 @@ mac-release: mac-archive ## Sign with Developer ID, notarize, staple and zip the
 mac-notarize: ## Retry notarizing, stapling and zipping the last Mac export without rebuilding
 	ASC_KEY_FILE="$(ASC_KEY_FILE)" ASC_KEY_ID="$(ASC_KEY_ID)" ASC_ISSUER_ID="$(ASC_ISSUER_ID)" \
 		RELEASE_TAG="$(RELEASE_TAG)" ./Scripts/mac-release.sh --notarize-only
+
+beta-plan: ## Show what `make beta` would set up
+	$(RELEASE) beta --dry-run
+
+beta: ## TestFlight internal testing: a group that gets every build, and the newest build's notes
+	$(RELEASE) beta
+
+beta-check: ## Say whether TestFlight needs a fresh build before the newest one expires
+	$(RELEASE) beta-check
 
 listing-plan: ## Show the listing `make listing` would fill in
 	$(RELEASE) listing --dry-run

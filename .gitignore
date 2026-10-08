@@ -16,6 +16,11 @@ Vendor/openssl/
 # Local signing and bundle identity; copy from Local.env.example.
 Local.env
 
-# Release output (archives, exported IPA, downloaded ADPs) and API keys.
+# Release output (archives, exported IPA, downloaded ADPs), API keys and
+# signing certificates (the Developer ID .p12 exported for CI).
 build/
 *.p8
+*.p12
+*.cer
+*.mobileprovision
+*.provisionprofile

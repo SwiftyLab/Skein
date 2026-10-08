@@ -7,6 +7,8 @@
 //   swift Scripts/appstoreconnect.swift listing [--dry-run]    # app info, age rating, version text, review notes
 //   swift Scripts/appstoreconnect.swift screenshots [--dry-run] # AppStore/screenshots → the version's screenshots
 //   swift Scripts/appstoreconnect.swift encryption [--dry-run]  # file the export compliance answers (once)
+//   swift Scripts/appstoreconnect.swift beta [--dry-run]        # internal TestFlight group + newest build's notes
+//   swift Scripts/appstoreconnect.swift beta-check             # does TestFlight need a fresh build before expiry?
 //   swift Scripts/appstoreconnect.swift notarize [--dry-run]   # latest build → version → submit for notarization
 //   swift Scripts/appstoreconnect.swift status                 # version, review and ADP state
 //   swift Scripts/appstoreconnect.swift altstore-register      # get an AltStore PAL marketplace token (once)
@@ -35,13 +37,13 @@ func fail(_ message: String) -> Never {
     exit(1)
 }
 
-guard ["setup", "listing", "screenshots", "encryption", "notarize", "status", "altstore-register", "release"].contains(command) else {
-    fail("Usage: swift Scripts/appstoreconnect.swift <setup|listing|screenshots|encryption|notarize|status|altstore-register|release> [--dry-run]")
+guard ["setup", "listing", "screenshots", "encryption", "beta", "beta-check", "notarize", "status", "altstore-register", "release"].contains(command) else {
+    fail("Usage: swift Scripts/appstoreconnect.swift <setup|listing|screenshots|encryption|beta|beta-check|notarize|status|altstore-register|release> [--dry-run]")
 }
 
 let envKeys = ["TUIST_BUNDLE_ID", "ASC_ISSUER_ID", "ASC_KEY_ID", "ASC_PRIVATE_KEY_PATH", "ASC_PRIVATE_KEY", "GITHUB_REPOSITORY", "TUIST_ENABLE_APP_GROUP",
                "ENCRYPTION_FRANCE_DOCUMENT", "TUIST_EXPORT_COMPLIANCE_CODE",
-               "DEVELOPER_NAME", "SUPPORT_URL", "PRIVACY_POLICY_URL",
+               "DEVELOPER_NAME", "SUPPORT_URL", "PRIVACY_POLICY_URL", "BETA_RENEW_DAYS",
                "REVIEW_FIRST_NAME", "REVIEW_LAST_NAME", "REVIEW_EMAIL", "REVIEW_PHONE",
                "ALTSTORE_DEVELOPER_ID", "ALTSTORE_EMAIL"]
 
@@ -192,6 +194,14 @@ let encryption = (
 /// to answer ITSAppUsesNonExemptEncryption = NO, which Project.swift does for every build.
 let needsDeclaration = encryption.proprietary || (encryption.thirdParty && encryption.france)
 
+/// Internal TestFlight testing. Limits: "What to Test" 4000 characters.
+let beta = (
+    group: "Team",
+    whatToTest: """
+    Try adding a torrent from a magnet link and from a .torrent file shared from Files or Safari, streaming a video while it downloads, an RSS feed with a download rule, and leaving the app with downloads running (⋯ › Keep Downloading in Background).
+    """
+)
+
 let screenshotSets = [("iphone", "APP_IPHONE_67"), ("ipad", "APP_IPAD_PRO_3GEN_129")]
 let screenshotsDir = URL(fileURLWithPath: "AppStore/screenshots")
 
@@ -237,6 +247,9 @@ if dryRun {
         print(needsDeclaration
               ? "  files a declaration, reusing a pending or approved one with the same answers"
               : "  no declaration: these answers need no documentation, so builds answer ITSAppUsesNonExemptEncryption = NO")
+    } else if command == "beta" {
+        print("  internal group \"\(beta.group)\" with access to every build (no review; testers are App Store Connect users)")
+        print("  newest processed build: export compliance if unanswered, \"What to Test\" (\(beta.whatToTest.count)/4000)")
     } else if command == "notarize" {
         print("  latest processed build → editable version (created if needed, version number taken from the build)")
         print("  export compliance from the declaration `make encryption` filed, if the build doesn't carry a code")
@@ -787,6 +800,112 @@ func putParts(_ data: Data, operations: [JSON], name: String) async throws {
     }
 }
 
+// MARK: - TestFlight (internal)
+
+/// Waits for the newest upload to finish processing and returns it with its marketing version.
+@MainActor
+func latestProcessedBuild() async throws -> (build: JSON, version: String) {
+    for poll in 0..<60 {
+        // Newest upload first; wait while App Store Connect is still processing it.
+        let json = try await api("GET", "/v1/builds?filter%5Bapp%5D=\(appID)&sort=-uploadedDate&limit=1&include=preReleaseVersion")
+        // A fresh upload takes a few minutes to be listed at all, so an empty list is waited on like processing.
+        guard let latest = items(json).first else {
+            if poll == 0 { print("  no build listed yet; waiting in case one was just uploaded (checks every 30 s, up to 30 min)…") }
+            try await Task.sleep(for: .seconds(30))
+            continue
+        }
+        let processing = attribute(latest, "processingState") as? String ?? "?"
+        if processing == "VALID" {
+            let included = json["included"] as? [JSON] ?? []
+            let version = included.first { $0["type"] as? String == "preReleaseVersions" && $0["id"] as? String == relatedID(latest, "preReleaseVersion") }
+                .flatMap { attribute($0, "version") as? String } ?? "?"
+            return (latest, version)
+        }
+        if processing == "FAILED" || processing == "INVALID" { throw APIError(status: 0, detail: "build \(attribute(latest, "version") ?? "?") is \(processing) in App Store Connect") }
+        if poll == 0 { print("  build \(attribute(latest, "version") ?? "?") is \(processing.lowercased()); waiting (checks every 30 s, up to 30 min)…") }
+        try await Task.sleep(for: .seconds(30))
+    }
+    throw APIError(status: 0, detail: "no processed build after 30 minutes; check the upload succeeded, then run again")
+}
+
+/// An internal group that gets every build, and the newest build's notes. Internal testing needs no review,
+/// so it works from any country; testers are App Store Connect users added to the group.
+@MainActor
+func setUpBeta() async throws {
+    print("→ Internal group…")
+    let groups = try await all("/v1/apps/\(appID)/betaGroups?limit=200").data
+    if groups.contains(where: { attribute($0, "name") as? String == beta.group }) {
+        print("  = \"\(beta.group)\" exists")
+    } else {
+        try await api("POST", "/v1/betaGroups", [
+            "data": ["type": "betaGroups",
+                     // Internal testers get every new build automatically, so nothing is added per build.
+                     "attributes": ["name": beta.group, "isInternalGroup": true, "hasAccessToAllBuilds": true],
+                     "relationships": ["app": resource("apps", id: appID)]],
+        ])
+        print("  + \"\(beta.group)\" (internal, every build)")
+    }
+
+    print("→ Latest build…")
+    let (build, version) = try await latestProcessedBuild()
+    guard let buildID = build["id"] as? String else { throw APIError(status: 0, detail: "no build id") }
+    let buildNumber = attribute(build, "version") as? String ?? "?"
+    print("  \(version) (\(buildNumber)), expires \(attribute(build, "expirationDate") as? String ?? "?")")
+    if attribute(build, "usesNonExemptEncryption") == nil || attribute(build, "usesNonExemptEncryption") is NSNull {
+        try await answerExportCompliance(buildID: buildID, buildNumber: buildNumber)
+    }
+    await attempt("What to Test") {
+        let localizations = try await all("/v1/builds/\(buildID)/betaBuildLocalizations?limit=50").data
+        if let english = localizations.first(where: { attribute($0, "locale") as? String == locale }), let id = english["id"] as? String {
+            try await api("PATCH", "/v1/betaBuildLocalizations/\(id)", ["data": ["type": "betaBuildLocalizations", "id": id, "attributes": ["whatsNew": beta.whatToTest]]])
+        } else {
+            try await api("POST", "/v1/betaBuildLocalizations", [
+                "data": ["type": "betaBuildLocalizations", "attributes": ["locale": locale, "whatsNew": beta.whatToTest],
+                         "relationships": ["build": resource("builds", id: buildID)]],
+            ])
+        }
+        print("  ✓ \"What to Test\" notes")
+    }
+}
+
+/// Whether TestFlight needs a fresh build: none is valid, or the newest expires within BETA_RENEW_DAYS (default 14).
+/// Also picks the version to build: Project.swift's, unless App Store Connect already closed that version, in which
+/// case the next patch after the highest version seen. Writes `needed` and `version` to GITHUB_OUTPUT for the workflow.
+@MainActor
+func checkBeta() async throws {
+    let renewDays = Int(setting("BETA_RENEW_DAYS")) ?? 14
+    let builds = items(try await api("GET", "/v1/builds?filter%5Bapp%5D=\(appID)&filter%5Bexpired%5D=false&filter%5BprocessingState%5D=VALID&sort=-uploadedDate&limit=1"))
+    let formatter = ISO8601DateFormatter()
+    var needed = true
+    if let newest = builds.first, let expiry = (attribute(newest, "expirationDate") as? String).flatMap(formatter.date(from:)) {
+        let days = Int(expiry.timeIntervalSinceNow / 86_400)
+        needed = days <= renewDays
+        print("  newest build \(attribute(newest, "version") ?? "?") expires in \(days) days (renewing at \(renewDays))")
+    } else {
+        print("  no unexpired build")
+    }
+
+    // A version whose review finished takes no more builds, so builds after it need a higher number.
+    let project = fromManifest(#""MARKETING_VERSION":\s*"([^"]+)""#) ?? "1.0"
+    let closedStates: Set<String> = ["PENDING_DEVELOPER_RELEASE", "PENDING_APPLE_RELEASE", "READY_FOR_DISTRIBUTION", "READY_FOR_SALE", "REPLACED_WITH_NEW_VERSION", "PROCESSING_FOR_DISTRIBUTION", "ACCEPTED"]
+    let versions = try await iosVersions()
+    let closed = versions.filter { closedStates.contains(state($0)) }.compactMap { attribute($0, "versionString") as? String }
+    func parts(_ v: String) -> [Int] { v.split(separator: ".").map { Int($0) ?? 0 } + [0, 0, 0] }
+    func less(_ a: String, _ b: String) -> Bool { parts(a).lexicographicallyPrecedes(parts(b)) }
+    var version = project
+    if let highest = closed.max(by: less), !less(highest, project) {
+        let p = parts(highest)
+        version = "\(p[0]).\(p[1]).\(p[2] + 1)"
+        print("  \(highest) is closed for new builds, so building \(version)")
+    }
+    print(needed ? "  → a new build is needed (version \(version))" : "  = no new build needed")
+    if let output = ProcessInfo.processInfo.environment["GITHUB_OUTPUT"], let handle = FileHandle(forWritingAtPath: output) {
+        handle.seekToEndOfFile()
+        handle.write(Data("needed=\(needed)\nversion=\(version)\n".utf8))
+        try handle.close()
+    }
+}
+
 // MARK: - Notarization
 
 @MainActor
@@ -1057,6 +1176,8 @@ do {
     case "listing": try await setUpListing()
     case "screenshots": try await uploadScreenshots()
     case "encryption": try await setUpEncryption()
+    case "beta": try await setUpBeta()
+    case "beta-check": try await checkBeta()
     case "notarize": try await submitForNotarization()
     case "status": try await showStatus()
     default: try await publishRelease()
@@ -1069,6 +1190,8 @@ if failures.isEmpty {
     switch command {
     case "listing":
         print("✓ Listing filled in. Next: `make screenshots` and `make screenshots-upload`. Still by hand: App Privacy (Data Not Collected).")
+    case "beta":
+        print("✓ TestFlight is set up. Add yourself once: TestFlight › Internal Testing › \"\(beta.group)\" › Testers › +, then install from the TestFlight app.")
     case "screenshots":
         print("✓ Screenshots are on the version. App Store Connect processes them for a minute or two before they show.")
     case "notarize":

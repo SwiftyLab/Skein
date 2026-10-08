@@ -197,6 +197,22 @@ first, with `assetURLs` pointing at those assets. Users add
 in AltStore PAL. Deleting a release breaks that version for anyone AltStore
 would fall back to, so leave old releases in place.
 
+### TestFlight (any country)
+
+Internal TestFlight testing needs no review and works outside the EU, for up to
+100 people on the App Store Connect team. `make beta` creates an internal group
+("Team") that gets every build, answers export compliance and adds "What to
+Test" to the newest build; add yourself to the group once, then install from the
+TestFlight app.
+
+Builds expire after 90 days. The **TestFlight** workflow checks every Monday and,
+when the newest build has `BETA_RENEW_DAYS` (default 14) or fewer days left,
+archives and uploads a fresh one with a timestamp build number, then runs
+`make beta`. It builds Project.swift's version, or the next patch version once
+App Store Connect has closed that one. `make beta-check` shows the same decision
+locally. It needs repository variables `TUIST_DEVELOPMENT_TEAM` and
+`TUIST_ENABLE_APP_GROUP` (as in `Local.env`), and optionally `BETA_RENEW_DAYS`.
+
 ### macOS
 
 The Mac app isn't on any store. It is signed with Developer ID, notarized by
