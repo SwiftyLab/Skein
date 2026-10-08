@@ -24,3 +24,8 @@ build/
 *.cer
 *.mobileprovision
 *.provisionprofile
+
+# Every dependency is pinned in a manifest (FeedKit exactly in Package.swift,
+# VLCKit by revision in Project.swift). Xcode and SwiftPM each write their own
+# different resolution here, so tracking it only produces churn.
+Package.resolved

@@ -32,7 +32,10 @@ let package = Package(
     ],
     dependencies: [
         // RSS/Atom parsing for the auto-download feature.
-        .package(url: "https://github.com/nmdias/FeedKit.git", from: "10.0.0"),
+        // Exact, so the manifest alone fixes the version: Package.resolved is
+        // not tracked, because Xcode (the app workspace, which also pins
+        // VLCKit) and SwiftPM (this package) would keep rewriting it differently.
+        .package(url: "https://github.com/nmdias/FeedKit.git", exact: "10.5.0"),
     ],
     targets: [
         // libtorrent itself, compiled from the pinned submodule.
