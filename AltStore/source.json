@@ -1,0 +1,45 @@
+{
+  "apps" : [
+    {
+      "appPermissions" : {
+        "entitlements" : [
+
+        ],
+        "privacy" : {
+          "NSLocalNetworkUsageDescription" : "Skein discovers peers on your local network."
+        }
+      },
+      "bundleIdentifier" : "com.soumyamahunt.skein",
+      "category" : "utilities",
+      "developerName" : "Soumya Ranjan Mahunt",
+      "iconURL" : "https://raw.githubusercontent.com/SwiftyLab/Skein/main/App/Resources/Assets.xcassets/AppIcon.appiconset/icon-universal-1024x1024@1x.png",
+      "localizedDescription" : "Skein is a native BitTorrent client for iPhone and iPad, built on libtorrent.\n\nDOWNLOAD\n• Add torrents from magnet links or .torrent files, from Safari, Files or the share sheet.\n• Pause, resume, recheck and reorder; downloads carry on in the background while iOS allows.\n• Choose which files to fetch and set per-torrent speed limits.\n\nSTREAM\n• Play video while it downloads: Skein fetches pieces in playback order, and plays MKV, AVI and other formats.\n\nFEEDS\n• Subscribe to RSS and Atom feeds and download new items automatically with include, exclude or regex rules.\n\nIN CONTROL\n• Peers, trackers and piece availability for every torrent.\n• DHT, local peer discovery, peer exchange, UPnP and NAT-PMP, protocol encryption.\n• SOCKS and HTTP proxies, IP blocklists and active-download limits.\n\nSkein contains no content and no search. Only download and share files you have the right to.\n\nPrivacy Policy: https://soumyamahunt.com/skein/privacy/",
+      "marketplaceID" : "6820509557",
+      "name" : "Skein",
+      "subtitle" : "BitTorrent, done natively",
+      "tintColor" : "#0C7399",
+      "versions" : [
+        {
+          "assetURLs" : {
+            "5e8f31b1-d751-3467-a616-26b18c87a572" : "https://github.com/SwiftyLab/Skein/releases/download/v1.0-202610081817/5e8f31b1-d751-3467-a616-26b18c87a572.ipa",
+            "544d798b-b375-3f3f-aa75-ea5d5a0d5c73" : "https://github.com/SwiftyLab/Skein/releases/download/v1.0-202610081817/544d798b-b375-3f3f-aa75-ea5d5a0d5c73.ipa",
+            "manifest" : "https://github.com/SwiftyLab/Skein/releases/download/v1.0-202610081817/manifest.json",
+            "signature" : "https://github.com/SwiftyLab/Skein/releases/download/v1.0-202610081817/signature"
+          },
+          "buildVersion" : "202610081817",
+          "date" : "2026-10-09T21:02:24Z",
+          "downloadURL" : "https://github.com/SwiftyLab/Skein/releases/download/v1.0-202610081817/manifest.json",
+          "minOSVersion" : "26.0",
+          "size" : 49736737,
+          "version" : "1.0"
+        }
+      ]
+    }
+  ],
+  "iconURL" : "https://raw.githubusercontent.com/SwiftyLab/Skein/main/App/Resources/Assets.xcassets/AppIcon.appiconset/icon-universal-1024x1024@1x.png",
+  "identifier" : "com.soumyamahunt.skein.source",
+  "name" : "Skein",
+  "patreonURL" : "https://www.patreon.com/SoumyaMahunt",
+  "tintColor" : "#0C7399",
+  "website" : "https://github.com/SwiftyLab/Skein"
+}
