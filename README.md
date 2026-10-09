@@ -180,8 +180,11 @@ make notarize    # wait for processing, attach the build, submit for notarizatio
 make status      # until the version shows an ADP
 ```
 
-Then run the **Release** workflow (Actions › Release › Run workflow, or
-`gh workflow run release.yml`). `make release` does the same locally, but
+Then nothing else is needed: the **Release** workflow checks every 3 hours
+and publishes once AltStore has processed the package (`make release-check`
+shows the same decision locally). To publish straight away, run it by hand
+(Actions › Release › Run workflow, or `gh workflow run release.yml`), which waits
+up to 30 minutes for AltStore. `make release` does the same locally, but
 leaves committing `AltStore/source.json` to you, and needs `gh` signed in.
 
 Export compliance is answered by each build's Info.plist; see step 7 above. The answers live in `encryption` at the top of the script. They

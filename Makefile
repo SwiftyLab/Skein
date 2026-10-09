@@ -56,7 +56,7 @@ endif
         setup-app setup-app-plan archive upload listing listing-plan \
         screenshots screenshots-upload screenshots-upload-plan encryption encryption-plan \
         mac-archive mac-release mac-notarize beta beta-plan beta-check notarize notarize-plan status \
-        altstore-register release release-plan
+        altstore-register release release-plan release-check
 
 help: ## Show this help
 	@echo "Skein — common tasks"
@@ -230,6 +230,9 @@ status: ## Show version, notarization and ADP state
 
 altstore-register: ## Get an AltStore PAL marketplace token for App Store Connect (once)
 	$(RELEASE) altstore-register
+
+release-check: ## Say whether a notarized build is ready to publish (AltStore finished, no release yet), without waiting
+	$(RELEASE) release-check
 
 release-plan: ## Show what `make release` would do
 	$(RELEASE) release --dry-run

@@ -12,6 +12,7 @@
 //   swift Scripts/appstoreconnect.swift notarize [--dry-run]   # latest build → version → submit for notarization
 //   swift Scripts/appstoreconnect.swift status                 # version, review and ADP state
 //   swift Scripts/appstoreconnect.swift altstore-register      # get an AltStore PAL marketplace token (once)
+//   swift Scripts/appstoreconnect.swift release-check          # is there a release AltStore has finished? (no waiting)
 //   swift Scripts/appstoreconnect.swift release [--dry-run]    # GitHub release of the notarized ADP + AltStore source
 //
 // By hand only (no API): App Privacy, and adding the marketplace token under
@@ -37,8 +38,8 @@ func fail(_ message: String) -> Never {
     exit(1)
 }
 
-guard ["setup", "listing", "screenshots", "encryption", "beta", "beta-check", "notarize", "status", "altstore-register", "release"].contains(command) else {
-    fail("Usage: swift Scripts/appstoreconnect.swift <setup|listing|screenshots|encryption|beta|beta-check|notarize|status|altstore-register|release> [--dry-run]")
+guard ["setup", "listing", "screenshots", "encryption", "beta", "beta-check", "notarize", "status", "altstore-register", "release-check", "release"].contains(command) else {
+    fail("Usage: swift Scripts/appstoreconnect.swift <setup|listing|screenshots|encryption|beta|beta-check|notarize|status|altstore-register|release-check|release> [--dry-run]")
 }
 
 let envKeys = ["TUIST_BUNDLE_ID", "ASC_ISSUER_ID", "ASC_KEY_ID", "ASC_PRIVATE_KEY_PATH", "ASC_PRIVATE_KEY", "GITHUB_REPOSITORY", "TUIST_ENABLE_APP_GROUP",
@@ -1031,6 +1032,61 @@ func releaseRepository() throws -> String {
         .trimmingCharacters(in: .whitespacesAndNewlines)
 }
 
+/// The newest version whose alternative distribution package Apple has built, and the release tag it maps to.
+func newestNotarized() async throws -> (marketing: String, buildNumber: String, minOS: String, adpID: String, tag: String)? {
+    for version in try await iosVersions() {
+        guard let versionID = version["id"] as? String, let adp = try await package(for: versionID), adp.version != nil else { continue }
+        let build = (try await api("GET", "/v1/appStoreVersions/\(versionID)/build"))["data"] as? JSON ?? [:]
+        let marketing = attribute(version, "versionString") as? String ?? "?"
+        let buildNumber = attribute(build, "version") as? String ?? "?"
+        return (marketing, buildNumber, attribute(build, "minOsVersion") as? String ?? "26.0", adp.id, "v\(marketing)-\(buildNumber)")
+    }
+    return nil
+}
+
+/// Whether a release can be published right now, without waiting: the newest notarized version has no GitHub release
+/// yet and AltStore has finished processing its package. Writes `ready` to GITHUB_OUTPUT, so a scheduled workflow
+/// only runs the release job when there is something to publish.
+@MainActor
+func checkRelease() async throws {
+    var ready = false
+    defer {
+        if let output = ProcessInfo.processInfo.environment["GITHUB_OUTPUT"], let handle = FileHandle(forWritingAtPath: output) {
+            handle.seekToEndOfFile()
+            handle.write(Data("ready=\(ready)\n".utf8))
+            try? handle.close()
+        }
+    }
+    print("→ Notarized version…")
+    guard let notarized = try await newestNotarized() else {
+        print("  = nothing notarized yet")
+        return
+    }
+    print("  \(notarized.marketing) (\(notarized.buildNumber)), ADP \(notarized.adpID)")
+
+    let repo = try releaseRepository()
+    let assets = (try? JSONSerialization.jsonObject(with: Data(try run(["gh", "release", "view", notarized.tag, "--repo", repo, "--json", "assets"], allowFailure: true).output.utf8))) as? JSON
+    if let existing = assets?["assets"] as? [JSON], existing.contains(where: { $0["name"] as? String == "manifest.json" }) {
+        print("  = release \(notarized.tag) already published")
+        return
+    }
+
+    print("→ AltStore…")
+    let (status, data) = try await request("GET", URL(string: "https://api.altstore.io/adps/\(notarized.adpID)")!)
+    let json = (try? JSONSerialization.jsonObject(with: data)) as? JSON ?? [:]
+    if json["downloadURL"] is String {
+        ready = true
+        print("  ✓ processed; release \(notarized.tag) can be published")
+    } else if status == 404 {
+        // Usually AltStore hears about the ADP from Apple's notification; this asks for it directly.
+        let (posted, body) = try await request("POST", URL(string: "https://api.altstore.io/adps")!, json: ["adpID": notarized.adpID])
+        guard (200..<300).contains(posted) else { throw APIError(status: posted, detail: "AltStore didn't accept the ADP: \(String(decoding: body, as: UTF8.self))") }
+        print("  + sent ADP to AltStore; checking again next time")
+    } else {
+        print("  = \(json["status"] as? String ?? "HTTP \(status)") since \(json["updated"] as? String ?? "?"); checking again next time")
+    }
+}
+
 @MainActor
 func publishRelease() async throws {
     // The source repeats the listing text, which names these.
@@ -1040,18 +1096,10 @@ func publishRelease() async throws {
     let raw = "https://raw.githubusercontent.com/\(repo)/main"
 
     print("→ Notarized version…")
-    var found: (version: JSON, adpID: String)?
-    for version in try await iosVersions() {
-        if let adp = try await package(for: version["id"] as? String ?? ""), adp.version != nil { found = (version, adp.id); break }
-    }
-    guard let version = found?.version, let adpID = found?.adpID, let versionID = version["id"] as? String else {
+    guard let notarized = try await newestNotarized() else {
         throw APIError(status: 0, detail: "no version has an alternative distribution package yet; check `make status` (it appears once notarization passes and the AltStore marketplace is connected)")
     }
-    let build = (try await api("GET", "/v1/appStoreVersions/\(versionID)/build"))["data"] as? JSON ?? [:]
-    let marketing = attribute(version, "versionString") as? String ?? "?"
-    let buildNumber = attribute(build, "version") as? String ?? "?"
-    let minOS = attribute(build, "minOsVersion") as? String ?? "26.0"
-    let tag = "v\(marketing)-\(buildNumber)"
+    let (marketing, buildNumber, minOS, adpID, tag) = (notarized.marketing, notarized.buildNumber, notarized.minOS, notarized.adpID, notarized.tag)
     print("  \(marketing) (\(buildNumber)), iOS \(minOS)+, ADP \(adpID)")
     // The workflow's macOS job attaches its build to the same release, with the same version numbers.
     if let output = ProcessInfo.processInfo.environment["GITHUB_OUTPUT"], let handle = FileHandle(forWritingAtPath: output) {
@@ -1180,6 +1228,7 @@ do {
     case "beta-check": try await checkBeta()
     case "notarize": try await submitForNotarization()
     case "status": try await showStatus()
+    case "release-check": try await checkRelease()
     default: try await publishRelease()
     }
 } catch {

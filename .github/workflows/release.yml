@@ -4,8 +4,16 @@
 # Then builds the Mac app at the same version, signs it with Developer ID,
 # notarizes it, and attaches it to that release.
 #
-# Run it after `make notarize` once `make status` shows an ADP. Re-running is
-# safe: an existing release is reused and an unchanged source is not committed.
+# Runs by itself every 3 hours: a short `check` job asks whether the newest
+# notarized build has no release yet and AltStore has finished processing it,
+# and only then does the release run, so publishing needs no action once a build
+# is notarized. Running it by hand skips the check and waits up to 30 minutes
+# for AltStore instead. Re-running is safe: an existing release is reused and an
+# unchanged source is not committed.
+#
+# GitHub pauses scheduled workflows after 60 days without commits; each release
+# commits AltStore/source.json, but after a quiet spell re-enable it under
+# Actions › Release.
 #
 # Needs repository secrets ASC_ISSUER_ID, ASC_KEY_ID and ASC_PRIVATE_KEY (the
 # .p8 file's contents), and repository variables TUIST_BUNDLE_ID,
@@ -18,6 +26,9 @@ name: Release
 
 on:
   workflow_dispatch:
+  schedule:
+    # Every 3 hours, off the hour to avoid GitHub's busiest minute.
+    - cron: "17 */3 * * *"
 
 permissions:
   # Create the release and push the updated source.
@@ -28,7 +39,34 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  check:
+    # Scheduled runs only; a manual run goes straight to the release.
+    if: github.event_name == 'schedule'
+    # The script needs CryptoKit, so macOS. It doesn't wait, so it is short.
+    runs-on: macos-latest
+    timeout-minutes: 10
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+      - id: check
+        run: make release-check
+        env:
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+          TUIST_BUNDLE_ID: ${{ vars.TUIST_BUNDLE_ID }}
+          GH_TOKEN: ${{ github.token }}
+
   release:
+    needs: check
+    # always(): a manual run skips `check`, and a skipped dependency would
+    # otherwise skip this job too.
+    if: >-
+      always() && (github.event_name == 'workflow_dispatch' ||
+      (needs.check.result == 'success' && needs.check.outputs.ready == 'true'))
     # The script needs CryptoKit and ditto, so macOS.
     runs-on: macos-latest
     # Waits for App Store Connect and AltStore can each take up to 30 minutes.
@@ -69,6 +107,9 @@ jobs:
 
   macos:
     needs: release
+    # Explicit, because `check` is skipped on manual runs and GitHub otherwise
+    # skips every job downstream of a skipped one.
+    if: always() && needs.release.result == 'success'
     runs-on: macos-latest
     # A cold build compiles libtorrent and, without a cache hit, OpenSSL.
     timeout-minutes: 120
