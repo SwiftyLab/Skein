@@ -1146,13 +1146,17 @@ func publishRelease() async throws {
            let inner = try fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil).first(where: { fm.fileExists(atPath: $0.appendingPathComponent("manifest.json").path) }) {
             root = inner
         }
-        let files = try fm.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey]).filter { !$0.lastPathComponent.hasPrefix(".") }
+        // Every file at any depth: Apple puts the per-device builds in variant/<publicId>.ipa. Release assets are flat,
+        // which AltStore allows for through assetURLs, keyed by file name without extension (manifest, signature, and
+        // each variant's publicId). So folders are dropped, but names must stay unique.
+        let files = (fm.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey])?.allObjects as? [URL] ?? [])
+            .filter { (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true && !$0.lastPathComponent.hasPrefix(".") }
         guard files.contains(where: { $0.lastPathComponent == "manifest.json" }) else { throw APIError(status: 0, detail: "the ADP has no manifest.json") }
-        // Release assets are flat, and assetURLs can only name top-level files.
-        if let folder = files.first(where: { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }) {
-            throw APIError(status: 0, detail: "the ADP has a subfolder (\(folder.lastPathComponent)), which GitHub release assets can't hold")
+        let names = files.map(\.lastPathComponent)
+        if let duplicate = names.first(where: { name in names.filter { $0 == name }.count > 1 }) {
+            throw APIError(status: 0, detail: "two ADP files are both named \(duplicate), which a flat list of release assets can't hold")
         }
-        print("  ✓ ADP in \(root.relativePath) (\(files.count) files)")
+        print("  ✓ ADP in \(root.relativePath) (\(files.count) files: \(names.sorted().joined(separator: ", ")))")
 
         print("→ GitHub release \(tag)…")
         let notes = """
