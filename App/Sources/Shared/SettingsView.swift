@@ -79,6 +79,16 @@ struct SettingsView: View {
                         .foregroundStyle(.orange)
                 }
             }
+
+            if let donationURL = Self.donationURL {
+                Section {
+                    Link(destination: donationURL) {
+                        Label("Support Skein", systemImage: "heart")
+                    }
+                } footer: {
+                    Text("Skein is free, with no ads and no tracking. Support helps keep it maintained.")
+                }
+            }
         }
         .formStyle(.grouped)
         .navigationTitle("Settings")
@@ -91,6 +101,11 @@ struct SettingsView: View {
         .frame(minWidth: 480, minHeight: 560)
         #endif
     }
+
+    /// From the Info.plist, which Project.swift fills from TUIST_DONATION_URL;
+    /// nil hides the section, so a build without one shows nothing.
+    private static let donationURL: URL? = (Bundle.main.object(forInfoDictionaryKey: "SKDonationURL") as? String)
+        .flatMap { $0.isEmpty ? nil : URL(string: $0) }
 
     private func rateField(_ label: String, value: Binding<Int>) -> some View {
         LabeledContent(label) {

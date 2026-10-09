@@ -52,6 +52,11 @@ let exportCompliance: [String: Plist.Value] = exportComplianceCode.isEmpty
     ]
 let appGroup = usesAppGroup ? "group.\(bundleId)" : ""
 
+/// Where Settings › Support sends people who want to support the app. From
+/// Local.env so the link isn't fixed in source; when empty, the section is
+/// hidden.
+let donationURL = Environment.donationUrl.getString(default: "")
+
 /// Signing settings, omitted entirely when no team is configured, so unsigned
 /// builds on a fresh clone keep working.
 let signingSettings: SettingsDictionary = developmentTeam.isEmpty
@@ -151,6 +156,7 @@ let project = Project(
                 "NSLocalNetworkUsageDescription":
                     "Skein discovers peers on your local network.",
                 "SKAppGroup": .string(appGroup),
+                "SKDonationURL": .string(donationURL),
                 "UILaunchScreen": [:],
                 // Lets the system hand us magnet: links from Safari and others.
                 "CFBundleURLTypes": [

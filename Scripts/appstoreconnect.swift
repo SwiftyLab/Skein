@@ -44,7 +44,7 @@ guard ["setup", "listing", "screenshots", "encryption", "beta", "beta-check", "n
 
 let envKeys = ["TUIST_BUNDLE_ID", "ASC_ISSUER_ID", "ASC_KEY_ID", "ASC_PRIVATE_KEY_PATH", "ASC_PRIVATE_KEY", "GITHUB_REPOSITORY", "TUIST_ENABLE_APP_GROUP",
                "ENCRYPTION_FRANCE_DOCUMENT", "TUIST_EXPORT_COMPLIANCE_CODE",
-               "DEVELOPER_NAME", "SUPPORT_URL", "PRIVACY_POLICY_URL", "BETA_RENEW_DAYS",
+               "DEVELOPER_NAME", "SUPPORT_URL", "PRIVACY_POLICY_URL", "PATREON_URL", "BETA_RENEW_DAYS",
                "REVIEW_FIRST_NAME", "REVIEW_LAST_NAME", "REVIEW_EMAIL", "REVIEW_PHONE",
                "ALTSTORE_DEVELOPER_ID", "ALTSTORE_EMAIL"]
 
@@ -261,6 +261,7 @@ if dryRun {
         print("  \(sourceFile.relativePath): version added with assetURLs, served from raw.githubusercontent.com on main")
         print("  source: \(source.identifier), developer \(developerName.isEmpty ? "MISSING (DEVELOPER_NAME)" : developerName), tint \(source.tintColor), permissions \(source.privacy)")
         print("  release notes link VLCKit's source at \(vlcKitSource)")
+        print("  Patreon link on the source: \(setting("PATREON_URL").isEmpty ? "none (PATREON_URL unset)" : setting("PATREON_URL"))")
     } else {
         print("  nothing to plan for \(command)")
     }
@@ -1210,6 +1211,8 @@ func publishRelease() async throws {
         "name": source.name, "identifier": source.identifier, "website": "https://github.com/\(repo)",
         "iconURL": icon, "tintColor": source.tintColor, "apps": [appEntry],
     ]) { _, new in new }
+    // Optional: AltStore shows it as a link on the source.
+    if !setting("PATREON_URL").isEmpty { json["patreonURL"] = setting("PATREON_URL") }
     let encoded = try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
     try FileManager.default.createDirectory(at: sourceFile.deletingLastPathComponent(), withIntermediateDirectories: true)
     try encoded.write(to: sourceFile)

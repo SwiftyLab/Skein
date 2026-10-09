@@ -28,6 +28,7 @@ APP            := $(DERIVED_MAC)/Build/Products/Debug/Skein.app
 ifneq ($(wildcard Local.env),)
 TUIST_BUNDLE_ID ?= $(shell sed -n 's/^[[:space:]]*TUIST_BUNDLE_ID[[:space:]]*=[[:space:]]*//p' Local.env)
 TUIST_DEVELOPMENT_TEAM ?= $(shell sed -n 's/^[[:space:]]*TUIST_DEVELOPMENT_TEAM[[:space:]]*=[[:space:]]*//p' Local.env)
+TUIST_DONATION_URL ?= $(shell sed -n 's/^[[:space:]]*TUIST_DONATION_URL[[:space:]]*=[[:space:]]*//p' Local.env)
 TUIST_ENABLE_APP_GROUP ?= $(shell sed -n 's/^[[:space:]]*TUIST_ENABLE_APP_GROUP[[:space:]]*=[[:space:]]*//p' Local.env)
 TUIST_EXPORT_COMPLIANCE_CODE ?= $(shell sed -n 's/^[[:space:]]*TUIST_EXPORT_COMPLIANCE_CODE[[:space:]]*=[[:space:]]*//p' Local.env)
 # The App Store Connect key, so `make upload` signs and uploads without an
@@ -40,6 +41,7 @@ export TUIST_BUNDLE_ID
 export TUIST_DEVELOPMENT_TEAM
 export TUIST_EXPORT_COMPLIANCE_CODE
 export TUIST_ENABLE_APP_GROUP
+export TUIST_DONATION_URL
 
 # A team identifier is about running on an iOS device, so it should not make a
 # quick local Mac build start demanding certificates. macOS therefore builds
