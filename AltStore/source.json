@@ -20,34 +20,34 @@
         "ipad" : [
           {
             "height" : 2752,
-            "imageURL" : "https://raw.githubusercontent.com/SwiftyLab/Skein/main/AppStore/screenshots/ipad/1-list.png",
+            "imageURL" : "https://raw.githubusercontent.com/SwiftyLab/Skein/main//Users/runner/work/Skein/Skein/AppStore/screenshots/ipad/1-list.png",
             "width" : 2064
           },
           {
             "height" : 2752,
-            "imageURL" : "https://raw.githubusercontent.com/SwiftyLab/Skein/main/AppStore/screenshots/ipad/2-add.png",
+            "imageURL" : "https://raw.githubusercontent.com/SwiftyLab/Skein/main//Users/runner/work/Skein/Skein/AppStore/screenshots/ipad/2-add.png",
             "width" : 2064
           },
           {
             "height" : 2752,
-            "imageURL" : "https://raw.githubusercontent.com/SwiftyLab/Skein/main/AppStore/screenshots/ipad/3-settings.png",
+            "imageURL" : "https://raw.githubusercontent.com/SwiftyLab/Skein/main//Users/runner/work/Skein/Skein/AppStore/screenshots/ipad/3-settings.png",
             "width" : 2064
           }
         ],
         "iphone" : [
           {
             "height" : 2868,
-            "imageURL" : "https://raw.githubusercontent.com/SwiftyLab/Skein/main/AppStore/screenshots/iphone/1-list.png",
+            "imageURL" : "https://raw.githubusercontent.com/SwiftyLab/Skein/main//Users/runner/work/Skein/Skein/AppStore/screenshots/iphone/1-list.png",
             "width" : 1320
           },
           {
             "height" : 2868,
-            "imageURL" : "https://raw.githubusercontent.com/SwiftyLab/Skein/main/AppStore/screenshots/iphone/2-add.png",
+            "imageURL" : "https://raw.githubusercontent.com/SwiftyLab/Skein/main//Users/runner/work/Skein/Skein/AppStore/screenshots/iphone/2-add.png",
             "width" : 1320
           },
           {
             "height" : 2868,
-            "imageURL" : "https://raw.githubusercontent.com/SwiftyLab/Skein/main/AppStore/screenshots/iphone/3-settings.png",
+            "imageURL" : "https://raw.githubusercontent.com/SwiftyLab/Skein/main//Users/runner/work/Skein/Skein/AppStore/screenshots/iphone/3-settings.png",
             "width" : 1320
           }
         ]
@@ -63,7 +63,7 @@
             "signature" : "https://github.com/SwiftyLab/Skein/releases/download/v1.0-202610081817/signature"
           },
           "buildVersion" : "202610081817",
-          "date" : "2026-10-09T21:33:04Z",
+          "date" : "2026-10-10T05:42:01Z",
           "downloadURL" : "https://github.com/SwiftyLab/Skein/releases/download/v1.0-202610081817/manifest.json",
           "localizedDescription" : "First release of Skein.",
           "minOSVersion" : "26.0",
