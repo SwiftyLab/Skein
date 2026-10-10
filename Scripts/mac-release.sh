@@ -39,20 +39,36 @@ echo "    Skein ${version} (${build}), $(lipo -archs "${APP}/Contents/MacOS/Skei
 # a network that intercepts it fails here with a connect timeout.
 echo "==> notarizing (usually a few minutes)"
 ditto -c -k --keepParent "${APP}" "${OUT}/notarize.zip"
-result=$(xcrun notarytool submit "${OUT}/notarize.zip" "${NOTARY[@]}" --wait --output-format json)
-status=$(plutil -extract status raw - <<<"${result}" 2>/dev/null || echo "unknown")
-id=$(plutil -extract id raw - <<<"${result}" 2>/dev/null || echo "")
+# Submitted without --wait and polled here instead: `--wait` gives up on the
+# first network error, and a CI runner losing its connection for a moment
+# once failed a build Apple had already accepted.
+id=$(xcrun notarytool submit "${OUT}/notarize.zip" "${NOTARY[@]}" --output-format json | plutil -extract id raw -)
+echo "    submission ${id}"
+status=""
+for _ in $(seq 120); do
+    # A failed check (offline, timeout) just means "ask again".
+    status=$(xcrun notarytool info "${id}" "${NOTARY[@]}" --output-format json 2>/dev/null \
+        | plutil -extract status raw - 2>/dev/null || true)
+    [[ "${status}" == "In Progress" || -z "${status}" ]] || break
+    sleep 30
+done
 if [[ "${status}" != "Accepted" ]]; then
-    echo "Notarization ${status}." >&2
+    echo "Notarization ${status:-still unfinished after an hour} (submission ${id})." >&2
     # Apple's log says which file and why.
-    [[ -n "${id}" ]] && xcrun notarytool log "${id}" "${NOTARY[@]}" >&2
+    [[ -n "${status}" ]] && xcrun notarytool log "${id}" "${NOTARY[@]}" >&2
     exit 1
 fi
+echo "    accepted"
 rm "${OUT}/notarize.zip"
 
 echo "==> stapling"
-# Lets Gatekeeper accept the app offline, without asking Apple.
-xcrun stapler staple "${APP}"
+# Lets Gatekeeper accept the app offline, without asking Apple. Fetching the
+# ticket is a network call too, so it gets a few tries.
+for attempt in 1 2 3 4 5; do
+    xcrun stapler staple "${APP}" && break
+    [[ ${attempt} -eq 5 ]] && exit 1
+    sleep 20
+done
 spctl --assess --type execute "${APP}"
 
 ZIP="${OUT}/Skein-${version}-${build}-macOS.zip"

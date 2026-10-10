@@ -140,12 +140,14 @@ jobs:
         run: brew install tuist
 
       # Both are slow to produce and change only when their scripts do.
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
+        id: boost-cache
         if: steps.existing.outputs.skip != 'true'
         with:
           path: Vendor/boost
           key: boost-${{ hashFiles('Scripts/bootstrap.sh') }}
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
+        id: openssl-cache
         if: steps.existing.outputs.skip != 'true'
         with:
           path: Vendor/openssl
@@ -154,6 +156,19 @@ jobs:
       - name: Fetch dependencies
         if: steps.existing.outputs.skip != 'true'
         run: make bootstrap openssl
+
+      # Saved straight away rather than at the end of the job, so a later
+      # failure (signing, notarization) doesn't throw away a long build.
+      - uses: actions/cache/save@v4
+        if: steps.existing.outputs.skip != 'true' && steps.boost-cache.outputs.cache-hit != 'true'
+        with:
+          path: Vendor/boost
+          key: ${{ steps.boost-cache.outputs.cache-primary-key }}
+      - uses: actions/cache/save@v4
+        if: steps.existing.outputs.skip != 'true' && steps.openssl-cache.outputs.cache-hit != 'true'
+        with:
+          path: Vendor/openssl
+          key: ${{ steps.openssl-cache.outputs.cache-primary-key }}
 
       # A throwaway keychain holding only the Developer ID certificate.
       - name: Import Developer ID certificate

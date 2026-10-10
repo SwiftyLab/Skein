@@ -16,6 +16,42 @@
       "localizedDescription" : "Skein is a native BitTorrent client for iPhone and iPad, built on libtorrent.\n\nDOWNLOAD\n• Add torrents from magnet links or .torrent files, from Safari, Files or the share sheet.\n• Pause, resume, recheck and reorder; downloads carry on in the background while iOS allows.\n• Choose which files to fetch and set per-torrent speed limits.\n\nSTREAM\n• Play video while it downloads: Skein fetches pieces in playback order, and plays MKV, AVI and other formats.\n\nFEEDS\n• Subscribe to RSS and Atom feeds and download new items automatically with include, exclude or regex rules.\n\nIN CONTROL\n• Peers, trackers and piece availability for every torrent.\n• DHT, local peer discovery, peer exchange, UPnP and NAT-PMP, protocol encryption.\n• SOCKS and HTTP proxies, IP blocklists and active-download limits.\n\nSkein contains no content and no search. Only download and share files you have the right to.\n\nPrivacy Policy: https://soumyamahunt.com/skein/privacy/",
       "marketplaceID" : "6820509557",
       "name" : "Skein",
+      "screenshots" : {
+        "ipad" : [
+          {
+            "height" : 2752,
+            "imageURL" : "https://raw.githubusercontent.com/SwiftyLab/Skein/main/AppStore/screenshots/ipad/1-list.png",
+            "width" : 2064
+          },
+          {
+            "height" : 2752,
+            "imageURL" : "https://raw.githubusercontent.com/SwiftyLab/Skein/main/AppStore/screenshots/ipad/2-add.png",
+            "width" : 2064
+          },
+          {
+            "height" : 2752,
+            "imageURL" : "https://raw.githubusercontent.com/SwiftyLab/Skein/main/AppStore/screenshots/ipad/3-settings.png",
+            "width" : 2064
+          }
+        ],
+        "iphone" : [
+          {
+            "height" : 2868,
+            "imageURL" : "https://raw.githubusercontent.com/SwiftyLab/Skein/main/AppStore/screenshots/iphone/1-list.png",
+            "width" : 1320
+          },
+          {
+            "height" : 2868,
+            "imageURL" : "https://raw.githubusercontent.com/SwiftyLab/Skein/main/AppStore/screenshots/iphone/2-add.png",
+            "width" : 1320
+          },
+          {
+            "height" : 2868,
+            "imageURL" : "https://raw.githubusercontent.com/SwiftyLab/Skein/main/AppStore/screenshots/iphone/3-settings.png",
+            "width" : 1320
+          }
+        ]
+      },
       "subtitle" : "BitTorrent, done natively",
       "tintColor" : "#0C7399",
       "versions" : [
@@ -27,8 +63,9 @@
             "signature" : "https://github.com/SwiftyLab/Skein/releases/download/v1.0-202610081817/signature"
           },
           "buildVersion" : "202610081817",
-          "date" : "2026-10-09T21:02:24Z",
+          "date" : "2026-10-09T21:33:04Z",
           "downloadURL" : "https://github.com/SwiftyLab/Skein/releases/download/v1.0-202610081817/manifest.json",
+          "localizedDescription" : "First release of Skein.",
           "minOSVersion" : "26.0",
           "size" : 49736737,
           "version" : "1.0"
@@ -36,10 +73,16 @@
       ]
     }
   ],
+  "description" : "The official source for Skein, a native BitTorrent client built on libtorrent: stream while downloading, RSS auto-download, and full control over files, peers and trackers. Free, with no ads and no tracking.",
+  "featuredApps" : [
+    "com.soumyamahunt.skein"
+  ],
+  "headerURL" : "https://raw.githubusercontent.com/SwiftyLab/Skein/main/AltStore/header.png",
   "iconURL" : "https://raw.githubusercontent.com/SwiftyLab/Skein/main/App/Resources/Assets.xcassets/AppIcon.appiconset/icon-universal-1024x1024@1x.png",
   "identifier" : "com.soumyamahunt.skein.source",
   "name" : "Skein",
   "patreonURL" : "https://www.patreon.com/SoumyaMahunt",
+  "subtitle" : "A native BitTorrent client for iPhone and iPad",
   "tintColor" : "#0C7399",
   "website" : "https://github.com/SwiftyLab/Skein"
 }

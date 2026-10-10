@@ -25,6 +25,7 @@
 
 import CryptoKit
 import Foundation
+import ImageIO
 
 // MARK: - Command line and config
 
@@ -92,6 +93,18 @@ func fromManifest(_ pattern: String) -> String? {
           let match = regex.firstMatch(in: manifest, range: NSRange(manifest.startIndex..., in: manifest)),
           let range = Range(match.range(at: 1), in: manifest) else { return nil }
     return String(manifest[range])
+}
+
+/// Every key/value pair `pattern` (two capture groups) matches in Project.swift.
+func allFromManifest(_ pattern: String) -> [String: String] {
+    guard let regex = try? NSRegularExpression(pattern: pattern) else { return [:] }
+    var found: [String: String] = [:]
+    for match in regex.matches(in: manifest, range: NSRange(manifest.startIndex..., in: manifest)) {
+        if let key = Range(match.range(at: 1), in: manifest), let value = Range(match.range(at: 2), in: manifest) {
+            found[String(manifest[key])] = String(manifest[value])
+        }
+    }
+    return found
 }
 
 /// The light-appearance accent colour from the asset catalog, as #RRGGBB.
@@ -168,12 +181,19 @@ let ageRating: JSON = [
 let source = (
     name: "Skein",
     identifier: "\(bundleID).source",
+    subtitle: "A native BitTorrent client for iPhone and iPad",
+    description: "The official source for Skein, a native BitTorrent client built on libtorrent: stream while downloading, RSS auto-download, and full control over files, peers and trackers. Free, with no ads and no tracking.",
     tintColor: accentColor(),
     category: "utilities",
-    // From Project.swift; AltStore shows these before install.
-    entitlements: [String](),
-    privacy: fromManifest(#""NSLocalNetworkUsageDescription":\s*"([^"]+)""#).map { ["NSLocalNetworkUsageDescription": $0] } ?? [:]
+    // Every usage description in Project.swift; AltStore shows them before install. Entitlements come from the
+    // build itself (see buildEntitlements), since the build is what users get.
+    privacy: allFromManifest(#""(NS[A-Za-z]+UsageDescription)":\s*"([^"]+)""#)
 )
+/// The source page's banner (3:2), committed in the repository; made by Scripts/make-altstore-header.swift.
+let sourceHeader = URL(fileURLWithPath: "AltStore/header.png")
+/// Entitlements every signed build has, which say nothing about what the app can do.
+let identityEntitlements: Set<String> = ["application-identifier", "com.apple.developer.team-identifier", "get-task-allow",
+                                         "beta-reports-active", "keychain-access-groups"]
 let sourceFile = URL(fileURLWithPath: "AltStore/source.json")
 let appIcon = URL(fileURLWithPath: "App/Resources/Assets.xcassets/AppIcon.appiconset/icon-universal-1024x1024@1x.png")
 let publishDir = URL(fileURLWithPath: "build/altstore")
@@ -259,7 +279,9 @@ if dryRun {
         print("  newest version with an ADP → AltStore processes it → unzip into \(publishDir.relativePath)/v<version>-<build>/")
         print("  GitHub release v<version>-<build> in this repository, one asset per ADP file (skipped if it exists)")
         print("  \(sourceFile.relativePath): version added with assetURLs, served from raw.githubusercontent.com on main")
-        print("  source: \(source.identifier), developer \(developerName.isEmpty ? "MISSING (DEVELOPER_NAME)" : developerName), tint \(source.tintColor), permissions \(source.privacy)")
+        print("  source: \(source.identifier), developer \(developerName.isEmpty ? "MISSING (DEVELOPER_NAME)" : developerName), tint \(source.tintColor), usage descriptions \(source.privacy.keys.sorted())")
+        print("  source page: subtitle, description, featured app, header \(FileManager.default.fileExists(atPath: sourceHeader.path) ? "✓" : "MISSING (\(sourceHeader.relativePath))"), screenshots iPhone \(screenshotFiles("iphone").count) / iPad \(screenshotFiles("ipad").count)")
+        print("  entitlements from the build in App Store Connect; release notes from its \"What's New\" (or \"First release\")")
         print("  release notes link VLCKit's source at \(vlcKitSource)")
         print("  Patreon link on the source: \(setting("PATREON_URL").isEmpty ? "none (PATREON_URL unset)" : setting("PATREON_URL"))")
     } else {
@@ -1034,15 +1056,51 @@ func releaseRepository() throws -> String {
 }
 
 /// The newest version whose alternative distribution package Apple has built, and the release tag it maps to.
-func newestNotarized() async throws -> (marketing: String, buildNumber: String, minOS: String, adpID: String, tag: String)? {
+func newestNotarized() async throws -> (marketing: String, buildNumber: String, minOS: String, adpID: String, tag: String, versionID: String, buildID: String)? {
     for version in try await iosVersions() {
         guard let versionID = version["id"] as? String, let adp = try await package(for: versionID), adp.version != nil else { continue }
         let build = (try await api("GET", "/v1/appStoreVersions/\(versionID)/build"))["data"] as? JSON ?? [:]
         let marketing = attribute(version, "versionString") as? String ?? "?"
         let buildNumber = attribute(build, "version") as? String ?? "?"
-        return (marketing, buildNumber, attribute(build, "minOsVersion") as? String ?? "26.0", adp.id, "v\(marketing)-\(buildNumber)")
+        return (marketing, buildNumber, attribute(build, "minOsVersion") as? String ?? "26.0", adp.id, "v\(marketing)-\(buildNumber)",
+                versionID, build["id"] as? String ?? "")
     }
     return nil
+}
+
+/// The entitlements the build actually carries, across the app and its extensions, minus identity-only ones.
+/// Read from App Store Connect because the package's variants are encrypted.
+func buildEntitlements(_ buildID: String) async throws -> [String] {
+    let json = try await api("GET", "/v1/builds/\(buildID)?include=buildBundles&fields%5BbuildBundles%5D=entitlements&limit%5BbuildBundles%5D=50")
+    var keys = Set<String>()
+    for bundle in json["included"] as? [JSON] ?? [] {
+        for (_, binary) in attribute(bundle, "entitlements") as? [String: Any] ?? [:] {
+            keys.formUnion(((binary as? [String: Any]) ?? [:]).keys)
+        }
+    }
+    return keys.subtracting(identityEntitlements).sorted()
+}
+
+/// The version's "What's New" from App Store Connect, if it has one (a first version can't).
+func releaseNotes(_ versionID: String) async throws -> String? {
+    let localizations = try await all("/v1/appStoreVersions/\(versionID)/appStoreVersionLocalizations?limit=50").data
+    let notes = localizations.first { attribute($0, "locale") as? String == locale }.flatMap { attribute($0, "whatsNew") as? String }
+    return notes?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? notes : nil
+}
+
+/// The committed screenshots in AltStore's per-device form; sizes are explicit because iPad ones require them.
+func sourceScreenshots(raw: String) -> JSON {
+    var result: JSON = [:]
+    for (folder, key) in [("iphone", "iphone"), ("ipad", "ipad")] {
+        result[key] = screenshotFiles(folder).compactMap { file -> JSON? in
+            guard let image = CGImageSourceCreateWithURL(file as CFURL, nil),
+                  let properties = CGImageSourceCopyPropertiesAtIndex(image, 0, nil) as? [CFString: Any],
+                  let width = properties[kCGImagePropertyPixelWidth] as? Int,
+                  let height = properties[kCGImagePropertyPixelHeight] as? Int else { return nil }
+            return ["imageURL": "\(raw)/\(file.relativePath)", "width": width, "height": height]
+        }
+    }
+    return result
 }
 
 /// Whether a release can be published right now, without waiting: the newest notarized version has no GitHub release
@@ -1101,6 +1159,8 @@ func publishRelease() async throws {
         throw APIError(status: 0, detail: "no version has an alternative distribution package yet; check `make status` (it appears once notarization passes and the AltStore marketplace is connected)")
     }
     let (marketing, buildNumber, minOS, adpID, tag) = (notarized.marketing, notarized.buildNumber, notarized.minOS, notarized.adpID, notarized.tag)
+    let entitlements = try await buildEntitlements(notarized.buildID)
+    let notes = try await releaseNotes(notarized.versionID)
     print("  \(marketing) (\(buildNumber)), iOS \(minOS)+, ADP \(adpID)")
     // The workflow's macOS job attaches its build to the same release, with the same version numbers.
     if let output = ProcessInfo.processInfo.environment["GITHUB_OUTPUT"], let handle = FileHandle(forWritingAtPath: output) {
@@ -1193,13 +1253,16 @@ func publishRelease() async throws {
     print("→ Source…")
     var json = (try? JSONSerialization.jsonObject(with: Data(contentsOf: sourceFile))) as? JSON ?? [:]
     var appEntry = (json["apps"] as? [JSON])?.first ?? [:]
-    var versions = (appEntry["versions"] as? [JSON] ?? []).filter { $0["buildVersion"] as? String != buildNumber }
-    versions.insert([
+    let earlier = (appEntry["versions"] as? [JSON] ?? []).filter { $0["buildVersion"] as? String != buildNumber }
+    var entry: JSON = [
         "version": marketing, "buildVersion": buildNumber,
         "date": ISO8601DateFormatter().string(from: Date()),
         "downloadURL": manifestURL, "assetURLs": assetURLs,
         "size": size, "minOSVersion": minOS,
-    ], at: 0)
+    ]
+    // AltStore shows this as the version's "What's New".
+    if let notes = notes ?? (earlier.isEmpty ? "First release of Skein." : nil) { entry["localizedDescription"] = notes }
+    var versions = [entry] + earlier
     // Newest first: AltStore offers the first entry the device can run.
     versions.sort { (Int($0["buildVersion"] as? String ?? "") ?? 0) > (Int($1["buildVersion"] as? String ?? "") ?? 0) }
     let icon = "\(raw)/\(appIcon.relativePath.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? appIcon.relativePath)"
@@ -1208,13 +1271,17 @@ func publishRelease() async throws {
         "developerName": developerName, "subtitle": listing.subtitle,
         "localizedDescription": listing.description, "iconURL": icon,
         "tintColor": source.tintColor, "category": source.category,
-        "appPermissions": ["entitlements": source.entitlements, "privacy": source.privacy],
+        // The newest build's entitlements: what installing now grants.
+        "appPermissions": ["entitlements": entitlements, "privacy": source.privacy],
+        "screenshots": sourceScreenshots(raw: raw),
         "versions": versions,
     ]) { _, new in new }
     json.merge([
         "name": source.name, "identifier": source.identifier, "website": "https://github.com/\(repo)",
+        "subtitle": source.subtitle, "description": source.description, "featuredApps": [bundleID],
         "iconURL": icon, "tintColor": source.tintColor, "apps": [appEntry],
     ]) { _, new in new }
+    if FileManager.default.fileExists(atPath: sourceHeader.path) { json["headerURL"] = "\(raw)/\(sourceHeader.relativePath)" }
     // Optional: AltStore shows it as a link on the source.
     if !setting("PATREON_URL").isEmpty { json["patreonURL"] = setting("PATREON_URL") }
     let encoded = try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
