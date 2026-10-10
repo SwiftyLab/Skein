@@ -77,12 +77,12 @@ jobs:
         run: brew install tuist
 
       # Shared with the Release workflow's caches: same keys, same contents.
-      - uses: actions/cache/restore@v4
+      - uses: actions/cache/restore@v6
         id: boost-cache
         with:
           path: Vendor/boost
           key: boost-${{ hashFiles('Scripts/bootstrap.sh') }}
-      - uses: actions/cache/restore@v4
+      - uses: actions/cache/restore@v6
         id: openssl-cache
         with:
           path: Vendor/openssl
@@ -93,12 +93,12 @@ jobs:
 
       # Saved straight away rather than at the end of the job, so a later
       # failure (signing, notarization) doesn't throw away a long build.
-      - uses: actions/cache/save@v4
+      - uses: actions/cache/save@v6
         if: steps.boost-cache.outputs.cache-hit != 'true'
         with:
           path: Vendor/boost
           key: ${{ steps.boost-cache.outputs.cache-primary-key }}
-      - uses: actions/cache/save@v4
+      - uses: actions/cache/save@v6
         if: steps.openssl-cache.outputs.cache-hit != 'true'
         with:
           path: Vendor/openssl
