@@ -3,7 +3,7 @@
     {
       "appPermissions" : {
         "entitlements" : [
-
+          "com.apple.security.application-groups"
         ],
         "privacy" : {
           "NSLocalNetworkUsageDescription" : "Skein discovers peers on your local network."
@@ -55,6 +55,23 @@
       "subtitle" : "BitTorrent, done natively",
       "tintColor" : "#0C7399",
       "versions" : [
+        {
+          "assetURLs" : {
+            "1fec0f63-cb76-3217-bf2c-0ccc0bc511b8" : "https://github.com/SwiftyLab/Skein/releases/download/v1.0.1-202610100817/1fec0f63-cb76-3217-bf2c-0ccc0bc511b8.ipa",
+            "19f8dfae-45d5-3887-a932-c69df4516377" : "https://github.com/SwiftyLab/Skein/releases/download/v1.0.1-202610100817/19f8dfae-45d5-3887-a932-c69df4516377.ipa",
+            "b28cb7df-c8ee-3895-8c0f-7b681b84c364" : "https://github.com/SwiftyLab/Skein/releases/download/v1.0.1-202610100817/b28cb7df-c8ee-3895-8c0f-7b681b84c364.ipa",
+            "fac0612a-d294-382e-9258-0c6258633f5a" : "https://github.com/SwiftyLab/Skein/releases/download/v1.0.1-202610100817/fac0612a-d294-382e-9258-0c6258633f5a.ipa",
+            "manifest" : "https://github.com/SwiftyLab/Skein/releases/download/v1.0.1-202610100817/manifest.json",
+            "signature" : "https://github.com/SwiftyLab/Skein/releases/download/v1.0.1-202610100817/signature"
+          },
+          "buildVersion" : "202610100817",
+          "date" : "2026-10-10T17:21:05Z",
+          "downloadURL" : "https://github.com/SwiftyLab/Skein/releases/download/v1.0.1-202610100817/manifest.json",
+          "localizedDescription" : "Bug fixes and improvements.",
+          "minOSVersion" : "26.0",
+          "size" : 51390784,
+          "version" : "1.0.1"
+        },
         {
           "assetURLs" : {
             "5e8f31b1-d751-3467-a616-26b18c87a572" : "https://github.com/SwiftyLab/Skein/releases/download/v1.0-202610081817/5e8f31b1-d751-3467-a616-26b18c87a572.ipa",
