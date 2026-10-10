@@ -45,7 +45,7 @@ guard ["setup", "listing", "screenshots", "encryption", "beta", "beta-check", "n
 
 let envKeys = ["TUIST_BUNDLE_ID", "ASC_ISSUER_ID", "ASC_KEY_ID", "ASC_PRIVATE_KEY_PATH", "ASC_PRIVATE_KEY", "GITHUB_REPOSITORY", "TUIST_ENABLE_APP_GROUP",
                "ENCRYPTION_FRANCE_DOCUMENT", "TUIST_EXPORT_COMPLIANCE_CODE",
-               "DEVELOPER_NAME", "SUPPORT_URL", "PRIVACY_POLICY_URL", "PATREON_URL", "WHATS_NEW", "BETA_RENEW_DAYS",
+               "DEVELOPER_NAME", "SUPPORT_URL", "PRIVACY_POLICY_URL", "PATREON_URL", "WHATS_NEW", "BUILD_NUMBER", "BETA_RENEW_DAYS",
                "REVIEW_FIRST_NAME", "REVIEW_LAST_NAME", "REVIEW_EMAIL", "REVIEW_PHONE",
                "ALTSTORE_DEVELOPER_ID", "ALTSTORE_EMAIL"]
 
@@ -230,6 +230,8 @@ let screenshotSets = [("iphone", "APP_IPHONE_67"), ("ipad", "APP_IPAD_PRO_3GEN_1
 let screenshotsDir = URL(fileURLWithPath: "AppStore/screenshots")
 /// "What's New" for the next update, edited before each release (WHATS_NEW overrides it).
 let whatsNewFile = URL(fileURLWithPath: "AppStore/whats-new.txt")
+/// Written by `make archive`, so `notarize` and `beta` act on the build just uploaded (BUILD_NUMBER overrides it).
+let buildNumberFile = URL(fileURLWithPath: "build/build-number")
 
 func screenshotFiles(_ folder: String) -> [URL] {
     let dir = screenshotsDir.appendingPathComponent(folder)
@@ -836,12 +838,18 @@ func putParts(_ data: Data, operations: [JSON], name: String) async throws {
 /// Waits for the newest upload to finish processing and returns it with its marketing version.
 @MainActor
 func latestProcessedBuild() async throws -> (build: JSON, version: String) {
+    // The build `make upload` just made, if known: newest-first would pick the previous build while App Store Connect
+    // takes its minutes to list the new one, and that once tried to resubmit an already released version.
+    let expected = setting("BUILD_NUMBER").isEmpty
+        ? ((try? String(contentsOf: buildNumberFile, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "")
+        : setting("BUILD_NUMBER")
+    let query = expected.isEmpty ? "sort=-uploadedDate" : "filter%5Bversion%5D=\(expected)"
+    if !expected.isEmpty { print("  waiting for build \(expected), the one just uploaded") }
     for poll in 0..<60 {
-        // Newest upload first; wait while App Store Connect is still processing it.
-        let json = try await api("GET", "/v1/builds?filter%5Bapp%5D=\(appID)&sort=-uploadedDate&limit=1&include=preReleaseVersion")
-        // A fresh upload takes a few minutes to be listed at all, so an empty list is waited on like processing.
+        let json = try await api("GET", "/v1/builds?filter%5Bapp%5D=\(appID)&\(query)&limit=1&include=preReleaseVersion")
+        // A fresh upload takes a few minutes to be listed at all, so not being listed is waited on like processing.
         guard let latest = items(json).first else {
-            if poll == 0 { print("  no build listed yet; waiting in case one was just uploaded (checks every 30 s, up to 30 min)…") }
+            if poll == 0 { print("  not listed yet; waiting (checks every 30 s, up to 30 min)…") }
             try await Task.sleep(for: .seconds(30))
             continue
         }
@@ -849,14 +857,15 @@ func latestProcessedBuild() async throws -> (build: JSON, version: String) {
         if processing == "VALID" {
             let included = json["included"] as? [JSON] ?? []
             let version = included.first { $0["type"] as? String == "preReleaseVersions" && $0["id"] as? String == relatedID(latest, "preReleaseVersion") }
-                .flatMap { attribute($0, "version") as? String } ?? "?"
+                .flatMap { attribute($0, "version") as? String }
+            guard let version else { throw APIError(status: 0, detail: "couldn't read build \(attribute(latest, "version") ?? "?")'s version number") }
             return (latest, version)
         }
         if processing == "FAILED" || processing == "INVALID" { throw APIError(status: 0, detail: "build \(attribute(latest, "version") ?? "?") is \(processing) in App Store Connect") }
         if poll == 0 { print("  build \(attribute(latest, "version") ?? "?") is \(processing.lowercased()); waiting (checks every 30 s, up to 30 min)…") }
         try await Task.sleep(for: .seconds(30))
     }
-    throw APIError(status: 0, detail: "no processed build after 30 minutes; check the upload succeeded, then run again")
+    throw APIError(status: 0, detail: "build \(expected.isEmpty ? "" : expected + " ")not processed after 30 minutes; check the upload succeeded, then run again")
 }
 
 /// An internal group that gets every build, and the newest build's notes. Internal testing needs no review,
@@ -970,28 +979,10 @@ func setWhatsNew(versionID: String) async throws {
 
 @MainActor
 func submitForNotarization() async throws {
-    print("→ Latest build…")
-    var build: JSON?, included: [JSON] = []
-    for poll in 0..<60 {
-        // Newest upload first; wait while App Store Connect is still processing it.
-        let json = try await api("GET", "/v1/builds?filter%5Bapp%5D=\(appID)&sort=-uploadedDate&limit=1&include=preReleaseVersion")
-        // A fresh upload takes a few minutes to be listed at all, so an empty list is waited on like processing.
-        guard let latest = items(json).first else {
-            if poll == 0 { print("  no build listed yet; waiting in case one was just uploaded (checks every 30 s, up to 30 min)…") }
-            try await Task.sleep(for: .seconds(30))
-            continue
-        }
-        let processing = attribute(latest, "processingState") as? String ?? "?"
-        if processing == "VALID" { build = latest; included = json["included"] as? [JSON] ?? []; break }
-        if processing == "FAILED" || processing == "INVALID" { throw APIError(status: 0, detail: "build \(attribute(latest, "version") ?? "?") is \(processing) in App Store Connect") }
-        if poll == 0 { print("  build \(attribute(latest, "version") ?? "?") is \(processing.lowercased()); waiting (checks every 30 s, up to 30 min)…") }
-        try await Task.sleep(for: .seconds(30))
-    }
-    guard let build, let buildID = build["id"] as? String else { throw APIError(status: 0, detail: "no processed build after 30 minutes; check `make upload` succeeded, then run `make notarize` again") }
+    print("→ Build…")
+    let (build, marketing) = try await latestProcessedBuild()
+    guard let buildID = build["id"] as? String else { throw APIError(status: 0, detail: "no build id") }
     let buildNumber = attribute(build, "version") as? String ?? "?"
-    let marketing = included.first { $0["type"] as? String == "preReleaseVersions" && $0["id"] as? String == relatedID(build, "preReleaseVersion") }
-        .flatMap { attribute($0, "version") as? String }
-    guard let marketing else { throw APIError(status: 0, detail: "couldn't read build \(buildNumber)'s version number") }
     print("  build \(marketing) (\(buildNumber)) is ready")
 
     // Builds carrying TUIST_EXPORT_COMPLIANCE_CODE arrive answered; others take the declaration `make encryption` filed.

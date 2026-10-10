@@ -145,7 +145,11 @@ setup-app: ## Register the bundle IDs and wait for the App Store Connect app rec
 
 ARCHIVE        := build/Skein.xcarchive
 # Every upload needs a higher build number; a timestamp always increases.
-BUILD_NUMBER   ?= $(shell date +%Y%m%d%H%M)
+# Expanded once, so the archive and the recorded number below can't straddle a
+# minute boundary and disagree.
+ifeq ($(origin BUILD_NUMBER),undefined)
+BUILD_NUMBER   := $(shell date +%Y%m%d%H%M)
+endif
 ASC_KEY_FILE    = $(patsubst ~/%,$(HOME)/%,$(ASC_PRIVATE_KEY_PATH))
 ASC_AUTH        = $(if $(strip $(ASC_KEY_ID)),-authenticationKeyPath "$(ASC_KEY_FILE)" \
                     -authenticationKeyID $(ASC_KEY_ID) -authenticationKeyIssuerID $(ASC_ISSUER_ID))
@@ -158,6 +162,7 @@ archive: generate ## Archive a Release iOS build (VERSION=… BUILD_NUMBER=… t
 		-allowProvisioningUpdates $(ASC_AUTH) \
 		DEVELOPMENT_TEAM=$(TUIST_DEVELOPMENT_TEAM) CURRENT_PROJECT_VERSION=$(BUILD_NUMBER) \
 		$(if $(VERSION),MARKETING_VERSION=$(VERSION)) archive
+	@echo "$(BUILD_NUMBER)" > build/build-number
 	@echo "Archived build $(BUILD_NUMBER) at $(ARCHIVE)"
 
 upload: archive ## Archive and upload to App Store Connect, ready for notarization
