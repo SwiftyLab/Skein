@@ -1097,7 +1097,8 @@ func sourceScreenshots(raw: String) -> JSON {
                   let properties = CGImageSourceCopyPropertiesAtIndex(image, 0, nil) as? [CFString: Any],
                   let width = properties[kCGImagePropertyPixelWidth] as? Int,
                   let height = properties[kCGImagePropertyPixelHeight] as? Int else { return nil }
-            return ["imageURL": "\(raw)/\(file.relativePath)", "width": width, "height": height]
+            // Built from the repository-relative folder: the listed URLs are absolute, so their path is the runner's.
+            return ["imageURL": "\(raw)/\(screenshotsDir.relativePath)/\(folder)/\(file.lastPathComponent)", "width": width, "height": height]
         }
     }
     return result
@@ -1253,10 +1254,13 @@ func publishRelease() async throws {
     print("→ Source…")
     var json = (try? JSONSerialization.jsonObject(with: Data(contentsOf: sourceFile))) as? JSON ?? [:]
     var appEntry = (json["apps"] as? [JSON])?.first ?? [:]
-    let earlier = (appEntry["versions"] as? [JSON] ?? []).filter { $0["buildVersion"] as? String != buildNumber }
+    let listed = appEntry["versions"] as? [JSON] ?? []
+    let earlier = listed.filter { $0["buildVersion"] as? String != buildNumber }
+    // A re-run keeps the version's first date, so it doesn't change what AltStore shows or make a needless commit.
+    let date = listed.first { $0["buildVersion"] as? String == buildNumber }?["date"] as? String
     var entry: JSON = [
         "version": marketing, "buildVersion": buildNumber,
-        "date": ISO8601DateFormatter().string(from: Date()),
+        "date": date ?? ISO8601DateFormatter().string(from: Date()),
         "downloadURL": manifestURL, "assetURLs": assetURLs,
         "size": size, "minOSVersion": minOS,
     ]
