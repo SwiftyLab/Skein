@@ -46,6 +46,7 @@ jobs:
       TUIST_BUNDLE_ID: ${{ vars.TUIST_BUNDLE_ID }}
       TUIST_DEVELOPMENT_TEAM: ${{ vars.TUIST_DEVELOPMENT_TEAM }}
       TUIST_ENABLE_APP_GROUP: ${{ vars.TUIST_ENABLE_APP_GROUP }}
+      TUIST_APP_GROUP: ${{ vars.TUIST_APP_GROUP }}
       TUIST_DONATION_URL: ${{ vars.TUIST_DONATION_URL }}
     steps:
       - uses: actions/checkout@v7

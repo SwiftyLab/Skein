@@ -11,7 +11,7 @@
 	     developer account, which is why it is opt-in. -->
 	<key>com.apple.security.application-groups</key>
 	<array>
-		<string>group.$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+		<string>$(SK_APP_GROUP)</string>
 	</array>
 </dict>
 </plist>

@@ -50,7 +50,13 @@ let exportCompliance: [String: Plist.Value] = exportComplianceCode.isEmpty
         "ITSAppUsesNonExemptEncryption": true,
         "ITSEncryptionExportComplianceCode": .string(exportComplianceCode),
     ]
-let appGroup = usesAppGroup ? "group.\(bundleId)" : ""
+/// The group's identifier: TUIST_APP_GROUP, or group.<bundle id> by default.
+/// App Group identifiers are unique across every developer team, so when the
+/// default is already taken elsewhere it has to be overridden. Both targets and
+/// both Info.plists take it from here: the extension's entitlements directly,
+/// the app's file through the SK_APP_GROUP build setting.
+let appGroupOverride = Environment.appGroup.getString(default: "")
+let appGroup = usesAppGroup ? (appGroupOverride.isEmpty ? "group.\(bundleId)" : appGroupOverride) : ""
 
 /// Where Settings › Support sends people who want to support the app. From
 /// Local.env so the link isn't fixed in source; when empty, the section is
@@ -220,6 +226,8 @@ let project = Project(
                 .target(name: "SkeinShare", condition: .when([.ios])),
             ],
             settings: .settings(base: signingSettings.merging([
+                // Read by Skein-iOS-AppGroup.entitlements.
+                "SK_APP_GROUP": .string(appGroup),
                 "CODE_SIGN_ENTITLEMENTS": usesAppGroup
                     ? "App/Entitlements/Skein-iOS-AppGroup.entitlements"
                     : "App/Entitlements/Skein-iOS.entitlements",
