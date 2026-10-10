@@ -69,7 +69,9 @@ jobs:
 
       - name: Archive and upload
         run: |
-          key="$RUNNER_TEMP/AuthKey.p8"
+          # Named the way Apple issues it (AuthKey_<key id>.p8): xcodebuild failed to
+          # authenticate with the same key saved as plain AuthKey.p8.
+          key="$RUNNER_TEMP/AuthKey_${ASC_KEY_ID}.p8"
           printf '%s\n' "$ASC_PRIVATE_KEY" > "$key"
           make upload ASC_PRIVATE_KEY_PATH="$key" VERSION="${{ steps.version.outputs.version }}"
           rm -f "$key"

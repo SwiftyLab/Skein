@@ -156,7 +156,9 @@ jobs:
       - name: Build, notarize and attach
         if: steps.existing.outputs.skip != 'true'
         run: |
-          key="$RUNNER_TEMP/AuthKey.p8"
+          # Named the way Apple issues it (AuthKey_<key id>.p8): xcodebuild failed to
+          # authenticate with the same key saved as plain AuthKey.p8.
+          key="$RUNNER_TEMP/AuthKey_${ASC_KEY_ID}.p8"
           printf '%s\n' "$ASC_PRIVATE_KEY" > "$key"
           make mac-release ASC_PRIVATE_KEY_PATH="$key" \
             VERSION="${{ needs.release.outputs.version }}" BUILD_NUMBER="${{ needs.release.outputs.build }}"
