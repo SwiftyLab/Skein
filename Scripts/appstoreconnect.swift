@@ -182,6 +182,9 @@ let source = (
     name: "Skein",
     identifier: "\(bundleID).source",
     subtitle: "A native BitTorrent client for iPhone and iPad",
+    // The source's account on explore.alt.store, @skein@alt.store, which AltStore runs and posts releases from.
+    // Required to federate (be listed on explore.alt.store), and it can never be changed once federated.
+    fediUsername: "skein",
     description: "The official source for Skein, a native BitTorrent client built on libtorrent: stream while downloading, RSS auto-download, and full control over files, peers and trackers. Free, with no ads and no tracking.",
     tintColor: accentColor(),
     category: "utilities",
@@ -1283,6 +1286,7 @@ func publishRelease() async throws {
     json.merge([
         "name": source.name, "identifier": source.identifier, "website": "https://github.com/\(repo)",
         "subtitle": source.subtitle, "description": source.description, "featuredApps": [bundleID],
+        "fediUsername": source.fediUsername,
         "iconURL": icon, "tintColor": source.tintColor, "apps": [appEntry],
     ]) { _, new in new }
     if FileManager.default.fileExists(atPath: sourceHeader.path) { json["headerURL"] = "\(raw)/\(sourceHeader.relativePath)" }

@@ -77,6 +77,7 @@
   "featuredApps" : [
     "com.soumyamahunt.skein"
   ],
+  "fediUsername" : "skein",
   "headerURL" : "https://raw.githubusercontent.com/SwiftyLab/Skein/main/AltStore/header.png",
   "iconURL" : "https://raw.githubusercontent.com/SwiftyLab/Skein/main/App/Resources/Assets.xcassets/AppIcon.appiconset/icon-universal-1024x1024@1x.png",
   "identifier" : "com.soumyamahunt.skein.source",
