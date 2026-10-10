@@ -174,6 +174,15 @@ first.
 
 ### Each release
 
+From GitHub, with nothing to build locally: write the release notes in
+`AppStore/whats-new.txt` (or type them into the workflow form), push, then run
+**Actions › Submit › Run workflow**. Leave *version* empty to submit the next
+patch version, or enter one such as `1.1`. It archives, uploads and submits for
+notarization; once Apple approves and AltStore has processed the package, the
+Release workflow publishes it, Mac build included, within three hours.
+
+The same steps locally:
+
 ```sh
 make upload      # archive with a timestamp build number and upload
 make notarize    # wait for processing, attach the build, submit for notarization

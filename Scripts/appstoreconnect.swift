@@ -45,7 +45,7 @@ guard ["setup", "listing", "screenshots", "encryption", "beta", "beta-check", "n
 
 let envKeys = ["TUIST_BUNDLE_ID", "ASC_ISSUER_ID", "ASC_KEY_ID", "ASC_PRIVATE_KEY_PATH", "ASC_PRIVATE_KEY", "GITHUB_REPOSITORY", "TUIST_ENABLE_APP_GROUP",
                "ENCRYPTION_FRANCE_DOCUMENT", "TUIST_EXPORT_COMPLIANCE_CODE",
-               "DEVELOPER_NAME", "SUPPORT_URL", "PRIVACY_POLICY_URL", "PATREON_URL", "BETA_RENEW_DAYS",
+               "DEVELOPER_NAME", "SUPPORT_URL", "PRIVACY_POLICY_URL", "PATREON_URL", "WHATS_NEW", "BETA_RENEW_DAYS",
                "REVIEW_FIRST_NAME", "REVIEW_LAST_NAME", "REVIEW_EMAIL", "REVIEW_PHONE",
                "ALTSTORE_DEVELOPER_ID", "ALTSTORE_EMAIL"]
 
@@ -228,6 +228,8 @@ let beta = (
 
 let screenshotSets = [("iphone", "APP_IPHONE_67"), ("ipad", "APP_IPAD_PRO_3GEN_129")]
 let screenshotsDir = URL(fileURLWithPath: "AppStore/screenshots")
+/// "What's New" for the next update, edited before each release (WHATS_NEW overrides it).
+let whatsNewFile = URL(fileURLWithPath: "AppStore/whats-new.txt")
 
 func screenshotFiles(_ folder: String) -> [URL] {
     let dir = screenshotsDir.appendingPathComponent(folder)
@@ -277,6 +279,8 @@ if dryRun {
     } else if command == "notarize" {
         print("  latest processed build → editable version (created if needed, version number taken from the build)")
         print("  export compliance from the declaration `make encryption` filed, if the build doesn't carry a code")
+        let notes = whatsNewText()
+        print("  What's New for an update (from \(setting("WHATS_NEW").isEmpty ? whatsNewFile.relativePath : "WHATS_NEW")): " + (notes.isEmpty ? "MISSING" : "\(notes.count) characters"))
         print("  review type NOTARIZATION, build attached, added to a review submission and submitted")
     } else if command == "release" {
         print("  newest version with an ADP → AltStore processes it → unzip into \(publishDir.relativePath)/v<version>-<build>/")
@@ -933,6 +937,35 @@ func checkBeta() async throws {
     }
 }
 
+// MARK: - What's New
+
+/// The release notes for the version being submitted: WHATS_NEW (a workflow input) or AppStore/whats-new.txt.
+func whatsNewText() -> String {
+    let text = setting("WHATS_NEW").isEmpty ? ((try? String(contentsOf: whatsNewFile, encoding: .utf8)) ?? "") : setting("WHATS_NEW")
+    return text.trimmingCharacters(in: .whitespacesAndNewlines)
+}
+
+/// Sets "What's New" on an update, which App Store Connect requires; a first version can't have one. AltStore and
+/// the GitHub release show the same text, since `release` reads it back from here.
+@MainActor
+func setWhatsNew(versionID: String) async throws {
+    let isFirst = try await iosVersions().allSatisfy { $0["id"] as? String == versionID }
+    guard !isFirst else { return }
+    let notes = whatsNewText()
+    guard !notes.isEmpty else {
+        throw APIError(status: 0, detail: "an update needs \"What's New\": set WHATS_NEW or write \(whatsNewFile.relativePath)")
+    }
+    // A new version starts with the previous one's metadata, so only the notes change.
+    let localizations = try await all("/v1/appStoreVersions/\(versionID)/appStoreVersionLocalizations?limit=50").data
+    guard let english = localizations.first(where: { attribute($0, "locale") as? String == locale }), let id = english["id"] as? String else {
+        throw APIError(status: 0, detail: "the version has no \(locale) metadata; run `make listing` first")
+    }
+    try await api("PATCH", "/v1/appStoreVersionLocalizations/\(id)", [
+        "data": ["type": "appStoreVersionLocalizations", "id": id, "attributes": ["whatsNew": notes]],
+    ])
+    print("  ✓ What's New (\(notes.count)/4000)")
+}
+
 // MARK: - Notarization
 
 @MainActor
@@ -969,6 +1002,7 @@ func submitForNotarization() async throws {
     print("→ Version \(marketing)…")
     let versionID = try await editableVersion(versionString: marketing)
     try await api("PATCH", "/v1/appStoreVersions/\(versionID)/relationships/build", resource("builds", id: buildID))
+    try await setWhatsNew(versionID: versionID)
     print("  ✓ build \(buildNumber) attached")
 
     print("→ Submission…")

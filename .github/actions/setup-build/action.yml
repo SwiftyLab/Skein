@@ -1,0 +1,45 @@
+# Everything a job needs before it can build the app: Xcode, Tuist, and the
+# vendored dependencies (Boost headers, the OpenSSL xcframework). Shared by the
+# Release, TestFlight and Submit workflows. Run after actions/checkout.
+name: Set up build
+description: Select Xcode, install Tuist, and restore or build Boost and OpenSSL.
+
+runs:
+  using: composite
+  steps:
+    - uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: latest-stable
+
+    - name: Install Tuist
+      shell: bash
+      run: brew install tuist
+
+    # Both are slow to produce and change only when their scripts do.
+    - uses: actions/cache/restore@v6
+      id: boost-cache
+      with:
+        path: Vendor/boost
+        key: boost-${{ hashFiles('Scripts/bootstrap.sh') }}
+    - uses: actions/cache/restore@v6
+      id: openssl-cache
+      with:
+        path: Vendor/openssl
+        key: openssl-${{ hashFiles('Scripts/build-openssl.sh') }}
+
+    - name: Fetch dependencies
+      shell: bash
+      run: make bootstrap openssl
+
+    # Saved straight away rather than at the end of the job, so a later failure
+    # (signing, notarization) doesn't throw away a long build.
+    - uses: actions/cache/save@v6
+      if: steps.boost-cache.outputs.cache-hit != 'true'
+      with:
+        path: Vendor/boost
+        key: ${{ steps.boost-cache.outputs.cache-primary-key }}
+    - uses: actions/cache/save@v6
+      if: steps.openssl-cache.outputs.cache-hit != 'true'
+      with:
+        path: Vendor/openssl
+        key: ${{ steps.openssl-cache.outputs.cache-primary-key }}

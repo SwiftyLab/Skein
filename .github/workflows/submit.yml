@@ -1,0 +1,80 @@
+# Builds a new iOS version, uploads it to App Store Connect and submits it for
+# notarization, all on a runner. Once Apple approves it and AltStore has
+# processed it, the Release workflow publishes it (and the Mac build) by itself.
+#
+# Run it from Actions › Submit › Run workflow:
+#   version    e.g. 1.0.1; empty picks Project.swift's version, or the next patch
+#              once App Store Connect has closed that one
+#   whats_new  "What's New" for this update; empty uses AppStore/whats-new.txt
+#
+# Needs the same secrets as the Release workflow (ASC_ISSUER_ID, ASC_KEY_ID,
+# ASC_PRIVATE_KEY) and repository variables TUIST_BUNDLE_ID,
+# TUIST_DEVELOPMENT_TEAM, TUIST_ENABLE_APP_GROUP and TUIST_DONATION_URL (as in
+# Local.env). Signing uses Xcode's cloud-managed certificates through the API
+# key, which works for App Store Connect uploads (unlike Developer ID).
+name: Submit
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to submit, e.g. 1.0.1 (empty = next one)
+        type: string
+        required: false
+      whats_new:
+        description: What's New for this update (empty = AppStore/whats-new.txt)
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: submit
+  cancel-in-progress: false
+
+jobs:
+  submit:
+    runs-on: macos-latest
+    # A cold build compiles libtorrent and, without a cache hit, OpenSSL; then
+    # App Store Connect processing can take up to 30 minutes.
+    timeout-minutes: 150
+    env:
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+      TUIST_BUNDLE_ID: ${{ vars.TUIST_BUNDLE_ID }}
+      TUIST_DEVELOPMENT_TEAM: ${{ vars.TUIST_DEVELOPMENT_TEAM }}
+      TUIST_ENABLE_APP_GROUP: ${{ vars.TUIST_ENABLE_APP_GROUP }}
+      TUIST_DONATION_URL: ${{ vars.TUIST_DONATION_URL }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - name: Pick the version
+        id: version
+        env:
+          VERSION_INPUT: ${{ inputs.version }}
+        run: |
+          if [ -n "$VERSION_INPUT" ]; then
+            echo "version=$VERSION_INPUT" >> "$GITHUB_OUTPUT"
+          else
+            # Project.swift's version, or the next patch once App Store Connect
+            # has closed it for new builds.
+            make beta-check
+          fi
+
+      - uses: ./.github/actions/setup-build
+
+      - name: Archive and upload
+        run: |
+          key="$RUNNER_TEMP/AuthKey.p8"
+          printf '%s\n' "$ASC_PRIVATE_KEY" > "$key"
+          make upload ASC_PRIVATE_KEY_PATH="$key" VERSION="${{ steps.version.outputs.version }}"
+          rm -f "$key"
+
+      - name: Submit for notarization
+        run: make notarize
+        env:
+          WHATS_NEW: ${{ inputs.whats_new }}
