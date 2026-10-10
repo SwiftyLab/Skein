@@ -48,7 +48,7 @@ jobs:
     outputs:
       ready: ${{ steps.check.outputs.ready }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: main
       - id: check
@@ -76,7 +76,7 @@ jobs:
       version: ${{ steps.publish.outputs.version }}
       build: ${{ steps.publish.outputs.build }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: main
 
@@ -118,7 +118,7 @@ jobs:
       RELEASE_TAG: ${{ needs.release.outputs.tag }}
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: main
 
