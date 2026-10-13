@@ -98,7 +98,7 @@
   "headerURL" : "https://raw.githubusercontent.com/SwiftyLab/Skein/main/AltStore/header.png",
   "iconURL" : "https://raw.githubusercontent.com/SwiftyLab/Skein/main/App/Resources/Assets.xcassets/AppIcon.appiconset/icon-universal-1024x1024@1x.png",
   "identifier" : "com.soumyamahunt.skein.source",
-  "name" : "Skein",
+  "name" : "Skein: Torrent & Stream",
   "patreonURL" : "https://www.patreon.com/SoumyaMahunt",
   "subtitle" : "A native BitTorrent client for iPhone and iPad",
   "tintColor" : "#0C7399",

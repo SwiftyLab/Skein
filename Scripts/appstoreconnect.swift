@@ -179,7 +179,9 @@ let ageRating: JSON = [
 // AltStore PAL source (https://faq.altstore.io/developers/make-a-source). It is committed at AltStore/source.json and
 // served from the repository's raw files; `release` adds each version, whose files are a GitHub release's assets.
 let source = (
-    name: "Skein",
+    // The source's display name on explore.alt.store, whose search only matches names (not descriptions or posts),
+    // so it carries the word people search for. The app inside the source is still just "Skein".
+    name: "Skein: Torrent & Stream",
     identifier: "\(bundleID).source",
     subtitle: "A native BitTorrent client for iPhone and iPad",
     // The source's account on explore.alt.store, @skein@alt.store, which AltStore runs and posts releases from.
