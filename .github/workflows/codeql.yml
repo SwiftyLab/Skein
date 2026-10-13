@@ -1,0 +1,80 @@
+# CodeQL code scanning, as an "advanced setup" because the default setup's
+# autobuild can't build Skein: it doesn't know the engine needs Boost and the
+# OpenSSL xcframework first (`make bootstrap openssl`). The same setup action
+# the release workflows use provides them, and the Swift extractor then watches
+# ordinary unsigned builds of the app.
+#
+# Turn off the default setup first (Settings › Code security › CodeQL analysis
+# › ⋯ › Switch to advanced), or GitHub refuses results from both.
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**.md", "AltStore/**", "AppStore/**"]
+  pull_request:
+    branches: [main]
+    paths-ignore: ["**.md", "AltStore/**", "AppStore/**"]
+  schedule:
+    # Wednesdays, 04:23 UTC: new queries find issues in code that hasn't changed.
+    - cron: "23 4 * * 3"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  swift:
+    name: Analyze (swift)
+    runs-on: macos-latest
+    # Two cold builds of libtorrent (macOS and the iOS simulator), each traced.
+    timeout-minutes: 120
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/setup-build
+
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: swift
+          build-mode: manual
+
+      # Unsigned builds of both platforms, so the Shared, macOS and iOS sources
+      # are all compiled (and so extracted); the engine package builds along
+      # with each. Tuist falls back to a placeholder bundle id without Local.env.
+      - name: Build
+        run: |
+          make generate
+          xcodebuild -workspace Skein.xcworkspace -scheme Skein -configuration Debug \
+            -destination 'generic/platform=macOS' CODE_SIGNING_ALLOWED=NO build -quiet
+          xcodebuild -workspace Skein.xcworkspace -scheme Skein -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build -quiet
+
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:swift
+
+  actions:
+    name: Analyze (actions)
+    # Checks the workflows themselves (injection, over-broad permissions); no build.
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: actions
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:actions
