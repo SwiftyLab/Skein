@@ -42,6 +42,14 @@ jobs:
 
       - uses: ./.github/actions/setup-build
 
+      # Before CodeQL starts tracing: generating the project compiles no Swift,
+      # and Tuist fails under the tracer ("Couldn't find resource named
+      # ProjectDescription"), because CodeQL runs copies of some executables
+      # from its own folder and Tuist looks for its resources next to itself.
+      # Tuist falls back to a placeholder bundle id without Local.env.
+      - name: Generate the Xcode project
+        run: make generate
+
       - uses: github/codeql-action/init@v4
         with:
           languages: swift
@@ -49,10 +57,10 @@ jobs:
 
       # Unsigned builds of both platforms, so the Shared, macOS and iOS sources
       # are all compiled (and so extracted); the engine package builds along
-      # with each. Tuist falls back to a placeholder bundle id without Local.env.
+      # with each. Plain xcodebuild, not make, so nothing but the compilers runs
+      # under the tracer.
       - name: Build
         run: |
-          make generate
           xcodebuild -workspace Skein.xcworkspace -scheme Skein -configuration Debug \
             -destination 'generic/platform=macOS' CODE_SIGNING_ALLOWED=NO build -quiet
           xcodebuild -workspace Skein.xcworkspace -scheme Skein -configuration Debug \
