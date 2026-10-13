@@ -1,5 +1,14 @@
 // swift-tools-version: 6.2
+import Foundation
 import PackageDescription
+
+// The OpenSSL xcframework is a build output (`make openssl`), not something in
+// git. Tools that only read the manifest, like Dependabot resolving FeedKit,
+// run on a bare checkout without it, and SwiftPM refuses to load a package
+// whose local binary target is missing. So it is declared only when it exists;
+// a build without it fails later, at libtorrent's `#include <openssl/ssl.h>`.
+let openSSLPath = "Vendor/openssl/OpenSSL.xcframework"
+let hasOpenSSL = FileManager.default.fileExists(atPath: "\(Context.packageDirectory)/\(openSSLPath)")
 
 // Compile definitions mirroring libtorrent's own CMakeLists.txt at v2.0.14.
 // CMake computes these; building in-tree means we restate them here.
@@ -42,16 +51,10 @@ let package = Package(
         // `sources: ["src"]` recurses, picking up src/kademlia and src/ed25519.
         // try_signal's example.cpp/test.cpp define main(), so name its two real
         // sources explicitly rather than globbing the directory.
-        // Built by Scripts/build-openssl.sh. Static libssl and libcrypto are
-        // merged into one library, since an xcframework slice carries only one.
-        .binaryTarget(
-            name: "COpenSSL",
-            path: "Vendor/openssl/OpenSSL.xcframework"
-        ),
-
+        // OpenSSL (COpenSSL) is appended below the package, only when built.
         .target(
             name: "Clibtorrent",
-            dependencies: ["COpenSSL"],
+            dependencies: hasOpenSSL ? ["COpenSSL"] : [],
             path: "Vendor/libtorrent",
             // Extensionless, so SwiftPM would otherwise try to compile it.
             exclude: ["src/ed25519/LICENSE"],
@@ -126,3 +129,9 @@ let package = Package(
     ],
     cxxLanguageStandard: .cxx17
 )
+
+// Built by Scripts/build-openssl.sh. Static libssl and libcrypto are merged
+// into one library, since an xcframework slice carries only one.
+if hasOpenSSL {
+    package.targets.append(.binaryTarget(name: "COpenSSL", path: openSSLPath))
+}

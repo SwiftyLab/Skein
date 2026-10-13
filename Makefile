@@ -73,6 +73,21 @@ help: ## Show this help
 
 # MARK: - Dependencies
 
+# What a build needs on disk, each produced by one of the two targets below.
+# Build targets list $(VENDORED) as a prerequisite, so a fresh clone (or one
+# after `git clean -fdx`) fetches and builds them first instead of failing with
+# "'boost/config.hpp' file not found". Once present, they are never rebuilt.
+LIBTORRENT     := Vendor/libtorrent/CMakeLists.txt
+BOOST          := Vendor/boost/boost
+OPENSSL        := Vendor/openssl/OpenSSL.xcframework
+VENDORED       := $(LIBTORRENT) $(BOOST) $(OPENSSL)
+
+$(LIBTORRENT) $(BOOST):
+	./Scripts/bootstrap.sh
+
+$(OPENSSL):
+	./Scripts/build-openssl.sh
+
 bootstrap: ## Fetch libtorrent and Boost headers
 	./Scripts/bootstrap.sh
 
@@ -81,13 +96,13 @@ openssl: ## Build the OpenSSL xcframework (slow; five Configure+make runs)
 
 # MARK: - Engine
 
-build: ## Build the engine package
+build: $(VENDORED) ## Build the engine package
 	$(SWIFT) build
 
-test: ## Run the engine tests (no network)
+test: $(VENDORED) ## Run the engine tests (no network)
 	$(SWIFT) test
 
-test-live: ## Also run the tests that talk to the public swarm
+test-live: $(VENDORED) ## Also run the tests that talk to the public swarm
 	TORRENTKIT_LIVE_TESTS=1 $(SWIFT) test
 
 # MARK: - Apps
@@ -101,12 +116,12 @@ generate: ## Regenerate the Xcode project from Project.swift
 $(WORKSPACE):
 	$(MAKE) generate
 
-app-macos: $(WORKSPACE) ## Build the macOS app (unsigned)
+app-macos: $(WORKSPACE) $(VENDORED) ## Build the macOS app (unsigned)
 	xcodebuild -workspace $(WORKSPACE) -scheme $(SCHEME) \
 		-destination 'platform=macOS,arch=arm64' \
 		-derivedDataPath $(DERIVED_MAC) CODE_SIGNING_ALLOWED=NO build
 
-app-macos-signed: $(WORKSPACE) ## Build the macOS app with your Developer ID
+app-macos-signed: $(WORKSPACE) $(VENDORED) ## Build the macOS app with your Developer ID
 	@test -n "$(strip $(TUIST_DEVELOPMENT_TEAM))" \
 		|| { echo "Set TUIST_DEVELOPMENT_TEAM in Local.env first."; exit 1; }
 	xcodebuild -workspace $(WORKSPACE) -scheme $(SCHEME) \
@@ -114,7 +129,7 @@ app-macos-signed: $(WORKSPACE) ## Build the macOS app with your Developer ID
 		-derivedDataPath $(DERIVED_MAC) \
 		DEVELOPMENT_TEAM=$(TUIST_DEVELOPMENT_TEAM) build
 
-app-ios: $(WORKSPACE) ## Build the iOS app for a device
+app-ios: $(WORKSPACE) $(VENDORED) ## Build the iOS app for a device
 	@test -n "$(strip $(TUIST_DEVELOPMENT_TEAM))" \
 		|| echo "note: no TUIST_DEVELOPMENT_TEAM set — building unsigned, which will not install on a device"
 	xcodebuild -workspace $(WORKSPACE) -scheme $(SCHEME) \
@@ -154,7 +169,7 @@ ASC_KEY_FILE    = $(patsubst ~/%,$(HOME)/%,$(ASC_PRIVATE_KEY_PATH))
 ASC_AUTH        = $(if $(strip $(ASC_KEY_ID)),-authenticationKeyPath "$(ASC_KEY_FILE)" \
                     -authenticationKeyID $(ASC_KEY_ID) -authenticationKeyIssuerID $(ASC_ISSUER_ID))
 
-archive: generate ## Archive a Release iOS build (VERSION=… BUILD_NUMBER=… to override)
+archive: generate $(VENDORED) ## Archive a Release iOS build (VERSION=… BUILD_NUMBER=… to override)
 	@test -n "$(strip $(TUIST_DEVELOPMENT_TEAM))" \
 		|| { echo "Set TUIST_DEVELOPMENT_TEAM in Local.env first."; exit 1; }
 	xcodebuild -workspace $(WORKSPACE) -scheme $(SCHEME) -configuration Release \
@@ -178,7 +193,7 @@ MAC_ARCHIVE    := build/Skein-macOS.xcarchive
 # rather than automatically: Apple's cloud-managed Developer ID signing refuses
 # App Store Connect API keys, even Admin ones (FB16835802). Nothing Skein uses on
 # the Mac needs a provisioning profile.
-mac-archive: generate ## Archive a universal Release macOS build (VERSION=… BUILD_NUMBER=… to override)
+mac-archive: generate $(VENDORED) ## Archive a universal Release macOS build (VERSION=… BUILD_NUMBER=… to override)
 	@test -n "$(strip $(TUIST_DEVELOPMENT_TEAM))" \
 		|| { echo "Set TUIST_DEVELOPMENT_TEAM in Local.env first."; exit 1; }
 	@security find-identity -v -p codesigning | grep -q "Developer ID Application: .*($(TUIST_DEVELOPMENT_TEAM))" \
@@ -213,7 +228,7 @@ listing-plan: ## Show the listing `make listing` would fill in
 listing: ## Fill in app info, age rating, version text and review notes (needs Local.env)
 	$(RELEASE) listing
 
-screenshots: $(WORKSPACE) ## Capture App Store Connect screenshots on the iPhone and iPad simulators
+screenshots: $(WORKSPACE) $(VENDORED) ## Capture App Store Connect screenshots on the iPhone and iPad simulators
 	./Scripts/screenshots.sh
 
 screenshots-upload-plan: ## Show which screenshots `make screenshots-upload` would send
