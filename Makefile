@@ -56,7 +56,7 @@ endif
 
 .DEFAULT_GOAL := help
 .PHONY: help bootstrap openssl build test test-live generate assets \
-        app-macos app-macos-signed app-ios run clean clean-all lint config \
+        app-macos app-macos-signed app-ios run clean source-zip clean-all lint config \
         setup-app setup-app-plan archive upload listing listing-plan \
         screenshots screenshots-upload screenshots-upload-plan encryption encryption-plan \
         mac-archive mac-release mac-notarize beta beta-plan beta-check notarize notarize-plan status \
@@ -276,6 +276,18 @@ config: ## Show the resolved bundle id and team
 	@echo "development team: $(if $(TUIST_DEVELOPMENT_TEAM),$(TUIST_DEVELOPMENT_TEAM),none — unsigned builds)"
 	@echo "swift:            $(SWIFT)"
 	@test -f Local.env || echo "(no Local.env — cp Local.env.example Local.env)"
+
+# Source archive for the archive-push workflow. A throwaway git dir applies the .gitignore rules,
+# so this works whether or not the folder is a git repo, and includes uncommitted changes.
+SOURCE_ZIP   := build/Skein-source.zip
+
+source-zip: ## Zip the source, minus git-ignored files, into build/Skein-source.zip
+	@mkdir -p $(dir $(SOURCE_ZIP)) && rm -f $(SOURCE_ZIP)
+	@tmp=$$(mktemp -d) && git init -q --bare "$$tmp" && \
+	git -c core.quotePath=false --git-dir="$$tmp" --work-tree=. ls-files -o --exclude-standard \
+		| grep -vxF '$(SOURCE_ZIP)' | zip -q -X -@ $(SOURCE_ZIP); \
+	status=$$?; rm -rf "$$tmp"; exit $$status
+	@echo "Wrote $(SOURCE_ZIP) ($$(du -h $(SOURCE_ZIP) | cut -f1))"
 
 clean: ## Remove build output, keeping fetched dependencies
 	rm -rf .build/mac-dd .build/ios-dd .build/ios-app-dd .build/screenshots-dd build

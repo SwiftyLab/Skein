@@ -432,7 +432,7 @@ func attempt(_ label: String, _ work: () async throws -> Void) async {
 // MARK: - Setup (bundle IDs and app record)
 
 /// The app record's fields. App Store Connect has no API to create apps, so these are typed into its New App form.
-let appRecord = (name: "Skein", sku: "skein", language: "English (U.S.)")
+let appRecord = (name: "Skein", sku: bundleID, language: "English (U.S.)")
 
 /// Registers an identifier unless it exists. The filter matches prefixes, so the identifier is compared exactly.
 @MainActor
