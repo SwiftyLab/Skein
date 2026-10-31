@@ -44,7 +44,7 @@ let package = Package(
         // Exact, so the manifest alone fixes the version: Package.resolved is
         // not tracked, because Xcode (the app workspace, which also pins
         // VLCKit) and SwiftPM (this package) would keep rewriting it differently.
-        .package(url: "https://github.com/nmdias/FeedKit.git", exact: "10.9.4"),
+        .package(url: "https://github.com/nmdias/FeedKit.git", exact: "10.10.1"),
     ],
     targets: [
         // libtorrent itself, compiled from the pinned submodule.
