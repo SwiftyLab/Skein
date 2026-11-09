@@ -418,12 +418,23 @@ public actor TorrentSession {
         box.session.requestStatusUpdates()
     }
 
-    /// Asks every torrent with metadata to save resume data, returning how many
-    /// `resumeDataSaved` events to expect.
+    /// Asks every torrent to save resume data, returning how many
+    /// `resumeDataSaved` or `resumeDataFailed` events to expect.
+    ///
+    /// With `onlyIfModified`, torrents unchanged since their last save answer
+    /// with `resumeDataFailed` rather than rewriting the same data, which keeps
+    /// periodic checkpoints cheap.
     @discardableResult
-    public func requestResumeData() -> Int {
+    public func requestResumeData(onlyIfModified: Bool = false) -> Int {
         guard !stopFlag.isSet else { return 0 }
-        return Int(box.session.requestResumeData())
+        return Int(box.session.requestResumeData(onlyIfModified))
+    }
+
+    /// Asks one torrent to save resume data; the result arrives as a
+    /// `resumeDataSaved` event.
+    public func saveResumeData(for infoHash: InfoHash) throws {
+        try checkRunning()
+        try check(box.session.saveResumeData(std.string(infoHash.value)))
     }
 
     /// Stops the session and ends ``events``. Idempotent.

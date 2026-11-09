@@ -72,6 +72,58 @@ struct PersistenceTests {
         #expect(outcome.restored == [original])
     }
 
+    /// A magnet still waiting for metadata has to be saved too, or quitting
+    /// before peers answer loses it.
+    @Test func magnetWithoutMetadataSurvivesSessionRestart() async throws {
+        let directory = try Self.makeStoreDirectory()
+        let savePath = try TorrentSessionTests.makeScratchDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            try? FileManager.default.removeItem(at: savePath)
+        }
+        let store = try TorrentStore(directory: directory)
+        let hex = String(repeating: "c", count: 40)
+
+        do {
+            let session = try TorrentSession(configuration: .offline)
+            _ = try await session.addMagnet("magnet:?xt=urn:btih:\(hex)&dn=test", savePath: savePath)
+            let saved = await session.persistResumeData(to: store, timeout: .seconds(10))
+            #expect(saved == 1)
+            await session.shutdown()
+        }
+
+        #expect(await store.count == 1)
+
+        let session = try TorrentSession(configuration: .offline)
+        defer { Task { await session.shutdown() } }
+        let outcome = await session.restore(from: store)
+        #expect(outcome.failures.isEmpty)
+        #expect(outcome.restored == [InfoHash(hex)])
+    }
+
+    /// Saving a single torrent is how the app checkpoints at add, metadata and
+    /// finish, so a quit with no warning still finds it on disk.
+    @Test func savingOneTorrentEmitsItsResumeData() async throws {
+        let savePath = try TorrentSessionTests.makeScratchDirectory()
+        let torrent = try TorrentSessionTests.makeTorrentFile()
+        defer {
+            try? FileManager.default.removeItem(at: savePath)
+            try? FileManager.default.removeItem(at: torrent)
+        }
+        let session = try TorrentSession(configuration: .offline)
+        defer { Task { await session.shutdown() } }
+
+        let hash = try await session.addTorrentFile(at: torrent, savePath: savePath)
+        try await session.saveResumeData(for: hash)
+        let event = await TorrentSessionTests.firstEvent(from: session) { event in
+            if case .resumeDataSaved(let saved, let data) = event {
+                return saved == hash && !data.isEmpty
+            }
+            return false
+        }
+        #expect(event != nil)
+    }
+
     @Test func restoringCorruptResumeDataDropsTheEntry() async throws {
         let directory = try Self.makeStoreDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

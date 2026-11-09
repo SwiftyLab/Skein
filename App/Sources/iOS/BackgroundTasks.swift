@@ -90,6 +90,9 @@ final class BackgroundCoordinator {
     }
 
     private func runContinued(_ task: BGContinuedProcessingTask) async {
+        // Handlers are registered before launch finishes, so the engine may
+        // not be up yet. Starting it twice is a no-op.
+        await manager?.start()
         let progress = task.progress
         progress.totalUnitCount = 100
 
@@ -116,6 +119,8 @@ final class BackgroundCoordinator {
     }
 
     private func runProcessing(_ task: BGProcessingTask) async {
+        // A background launch may never show a view to start the engine.
+        await manager?.start()
         // Rescheduled on the way out rather than up front, once it is known
         // whether anything is still unfinished. Both exits must do it: a
         // handler that forgets to reschedule silently stops the whole mechanism.

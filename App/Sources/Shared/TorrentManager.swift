@@ -46,6 +46,17 @@ public final class TorrentManager {
     /// The last start or stop request, which the next one waits on so an add
     /// followed quickly by a removal cannot reach the session out of order.
     private var pollingChange: Task<Void, Never>?
+    /// Resume-data writes, chained so waiting on the last one waits on all.
+    private var storeWrites: Task<Void, Never>?
+    /// Resume-data alerts seen so far, saved or failed. Waiters compare it
+    /// against a target taken before their request, so alerts that land before
+    /// the waiter registers still count.
+    private var resumeDataAlerts = 0
+    private var resumeDataWaiters: [UUID: (target: Int, continuation: CheckedContinuation<Void, Never>)] = [:]
+    private var checkpointTask: Task<Void, Never>?
+    /// How often unsaved progress is written while running, so a crash or a
+    /// kill without warning loses minutes rather than the whole torrent list.
+    private static let checkpointInterval: Duration = .seconds(120)
 
     public var downloadRate: Int { torrents.reduce(0) { $0 + $1.downloadRate } }
     public var uploadRate: Int { torrents.reduce(0) { $0 + $1.uploadRate } }
@@ -128,6 +139,13 @@ public final class TorrentManager {
             for failure in outcome.failures {
                 record(failure.1.localizedDescription, for: failure.0)
             }
+            checkpointTask = Task { [weak self] in
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: Self.checkpointInterval)
+                    guard let session = self?.session else { return }
+                    await session.requestResumeData(onlyIfModified: true)
+                }
+            }
             // Status polling is not started here: it follows the torrent list,
             // starting with the first `torrentAdded` event (restored torrents
             // included), so an empty client does not wake every second.
@@ -138,24 +156,17 @@ public final class TorrentManager {
         }
     }
 
-    /// Writes resume data for every torrent without stopping the session.
-    ///
-    /// Used by the iOS background handlers, which must checkpoint progress at
-    /// points where the app may be killed without warning.
-    public func persistResumeData() async {
-        guard let session, let store else { return }
-        await session.persistResumeData(to: store)
-    }
-
     /// Saves resume data, then stops the session.
     ///
     /// Must complete before the process exits, or progress is lost and the next
     /// launch forces a full recheck of every torrent.
     public func shutdown() async {
+        guard session != nil else { return }
+        checkpointTask?.cancel()
+        checkpointTask = nil
+        await persistResumeData()
+        // Re-read: another shutdown may have finished during the save.
         guard let session else { return }
-        if let store {
-            await session.persistResumeData(to: store)
-        }
         await streamingServer?.stop()
         streamingServer = nil
         for infoHash in moveDestinations.keys { releaseMoveDestination(infoHash) }
@@ -204,6 +215,7 @@ public final class TorrentManager {
         guard let session else { return record("the engine is not running", for: nil) }
         do {
             let hash = try await session.addTorrentFile(at: url, savePath: destination)
+            saveResumeData(for: hash)
             await apply(options, to: hash)
         } catch {
             record(String(describing: error), for: nil)
@@ -265,6 +277,7 @@ public final class TorrentManager {
         guard let session else { return record("the engine is not running", for: nil) }
         do {
             let hash = try await session.addMagnet(uri, savePath: destination)
+            saveResumeData(for: hash)
             await apply(options, to: hash)
         } catch {
             record(String(describing: error), for: nil)
@@ -502,13 +515,21 @@ public final class TorrentManager {
         case .contentRenameFailed(let hash, let message):
             record("Could not rename: \(message)", for: hash)
         case .resumeDataSaved(let hash, let data):
-            Task { [store] in try? await store?.save(data, for: hash) }
+            resumeDataAlertArrived(saving: data, for: hash)
+        case .resumeDataFailed:
+            // Usually "not modified" from a checkpoint; still an answer.
+            resumeDataAlertArrived(saving: nil, for: nil)
         case .sessionStopped:
             isRunning = false
         case .torrentFinished(let hash):
+            // Saved straight away so a finished torrent cannot be lost to a
+            // quit before the next checkpoint.
+            saveResumeData(for: hash)
             let name = torrents.first { $0.infoHash == hash }?.name ?? "Torrent"
             Task { await notifier.torrentFinished(name: name, infoHash: hash.value) }
         case .metadataReceived(let hash):
+            // Replaces the magnet-only resume data with the full metadata.
+            saveResumeData(for: hash)
             // The moment a magnet's piece priorities can finally be set.
             if let options = pendingOptions.removeValue(forKey: hash) {
                 Task { [session] in
@@ -516,8 +537,7 @@ public final class TorrentManager {
                         options.prioritisesFirstAndLastPieces, for: hash)
                 }
             }
-        case .torrentPaused, .torrentResumed, .torrentChecked,
-             .resumeDataFailed, .other:
+        case .torrentPaused, .torrentResumed, .torrentChecked, .other:
             // Status polling reflects these; nothing extra to do here.
             break
         }
@@ -571,5 +591,59 @@ extension TorrentManager {
                 await session.stopPollingStatus()
             }
         }
+    }
+}
+
+// MARK: - Resume data
+
+extension TorrentManager {
+    /// Writes resume data for every torrent without stopping the session.
+    ///
+    /// Used by the iOS background handlers, which must checkpoint progress at
+    /// points where the app may be killed without warning.
+    ///
+    /// Collects the alerts through this manager's own event loop rather than
+    /// ``TorrentSession/persistResumeData(to:timeout:)``, which would iterate
+    /// `events` a second time and only see whichever alerts it won.
+    public func persistResumeData(timeout: Duration = .seconds(10)) async {
+        guard let session else { return }
+        // Taken before the request, so alerts handled while it is in flight
+        // still count toward this save.
+        let before = resumeDataAlerts
+        let expected = await session.requestResumeData()
+        await waitForResumeDataAlerts(reaching: before + expected, timeout: timeout)
+        await storeWrites?.value
+    }
+
+    private func waitForResumeDataAlerts(reaching target: Int, timeout: Duration) async {
+        guard resumeDataAlerts < target else { return }
+        let id = UUID()
+        let timer = Task { [weak self] in
+            try? await Task.sleep(for: timeout)
+            self?.resumeDataWaiters.removeValue(forKey: id)?.continuation.resume()
+        }
+        await withCheckedContinuation { continuation in
+            resumeDataWaiters[id] = (target, continuation)
+        }
+        timer.cancel()
+    }
+
+    private func resumeDataAlertArrived(saving data: Data?, for infoHash: InfoHash?) {
+        if let data, let infoHash {
+            let previous = storeWrites
+            storeWrites = Task { [store] in
+                await previous?.value
+                try? await store?.save(data, for: infoHash)
+            }
+        }
+        resumeDataAlerts += 1
+        for (id, waiter) in resumeDataWaiters where waiter.target <= resumeDataAlerts {
+            resumeDataWaiters.removeValue(forKey: id)?.continuation.resume()
+        }
+    }
+
+    /// Saves one torrent now, rather than waiting for the next checkpoint.
+    private func saveResumeData(for infoHash: InfoHash) {
+        Task { [session] in try? await session?.saveResumeData(for: infoHash) }
     }
 }

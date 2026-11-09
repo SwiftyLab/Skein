@@ -3,13 +3,27 @@ import TorrentKit
 
 @main
 struct SkeinApp: App {
-    @State private var manager = TorrentManager()
+    @State private var manager: TorrentManager
     @State private var feeds: FeedCoordinator?
     @Environment(\.scenePhase) private var scenePhase
 
     #if os(iOS)
-    @State private var background: BackgroundCoordinator?
+    @State private var background: BackgroundCoordinator
+    #else
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     #endif
+
+    init() {
+        let manager = TorrentManager()
+        _manager = State(initialValue: manager)
+        #if os(iOS)
+        // BGTaskScheduler only accepts handlers registered before launch
+        // finishes, which `.task` on the first view is too late for.
+        let background = BackgroundCoordinator(manager: manager)
+        background.registerHandlers()
+        _background = State(initialValue: background)
+        #endif
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -33,6 +47,9 @@ struct SkeinApp: App {
 
 extension SkeinApp {
     private func startUp() async {
+        #if os(macOS)
+        appDelegate.manager = manager
+        #endif
         await manager.start()
         #if os(iOS)
         await manager.drainSharedInbox()
@@ -42,13 +59,6 @@ extension SkeinApp {
             feeds = coordinator
             await coordinator.start()
         }
-        #if os(iOS)
-        if background == nil {
-            let coordinator = BackgroundCoordinator(manager: manager)
-            coordinator.registerHandlers()
-            background = coordinator
-        }
-        #endif
     }
 
     /// Accepts both magnet links and .torrent files handed over by the system.
@@ -81,11 +91,17 @@ extension SkeinApp {
     private func handleScenePhase(_ phase: ScenePhase) {
         #if os(iOS)
         switch phase {
+        case .inactive:
+            // Opening the app switcher only makes the app inactive, and
+            // swiping it away from there may never reach `.background`, so this
+            // is the last moment that is sure to come before a force-quit.
+            background.beginSuspensionGrace()
         case .background:
-            // The last reliable moment to checkpoint progress, and the point
-            // at which it is known whether a catch-up run is worth queueing.
-            background?.beginSuspensionGrace()
-            background?.scheduleProcessing()
+            // The point at which it is known whether a catch-up run is worth
+            // queueing; the save is repeated in case progress moved since
+            // `.inactive`.
+            background.beginSuspensionGrace()
+            background.scheduleProcessing()
         case .active:
             // Catches anything shared while the app was not running.
             Task { await manager.drainSharedInbox() }

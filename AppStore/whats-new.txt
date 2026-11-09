@@ -1,1 +1,1 @@
-Bug fixes and improvements.
+Torrents now stay in your list after you close Skein, whether they are still downloading or already finished. Previously the list could come back empty after quitting.

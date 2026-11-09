@@ -168,8 +168,14 @@ public enum SessionEvent: Sendable {
         case .trackerError: self = .trackerFailed(hash, message)
         case .resumeDataSaved:
             // Copied byte-wise; resume data is binary and must not pass through
-            // a Swift String.
-            self = .resumeDataSaved(hash, Data(alert.resumeData))
+            // a Swift String. Copied from the storage pointer rather than with
+            // `Data(alert.resumeData)`: that goes through the vector's interop
+            // Sequence conformance, whose witness table lookup segfaults on the
+            // pump thread, killing the process at every save.
+            let bytes = alert.resumeData
+            let data = bytes.empty()
+                ? Data() : Data(bytes: bytes.__dataUnsafe(), count: Int(bytes.size()))
+            self = .resumeDataSaved(hash, data)
         case .resumeDataFailed: self = .resumeDataFailed(hash, message)
         case .storageMoved: self = .storageMoved(hash, message)
         case .storageMoveFailed: self = .storageMoveFailed(hash, message)

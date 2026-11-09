@@ -468,6 +468,13 @@ Result Session::removeTorrent(const std::string &infoHash, bool deleteFiles) {
     return result;
 }
 
+Result Session::saveResumeData(const std::string &infoHash) {
+    std::shared_lock<std::shared_mutex> lock(m_impl->sessionMutex);
+    return withHandle(m_impl->handles, infoHash, [](const lt::torrent_handle &handle) {
+        handle.save_resume_data(lt::torrent_handle::save_info_dict);
+    });
+}
+
 Result Session::pauseTorrent(const std::string &infoHash) {
     std::shared_lock<std::shared_mutex> lock(m_impl->sessionMutex);
     return withHandle(m_impl->handles, infoHash, [](const lt::torrent_handle &handle) {
@@ -974,16 +981,25 @@ void Session::requestStatusUpdates() {
     }
 }
 
-std::int32_t Session::requestResumeData() {
+std::int32_t Session::requestResumeData(bool onlyIfModified) {
     std::int32_t requested = 0;
     try {
         std::shared_lock<std::shared_mutex> lock(m_impl->sessionMutex);
+        lt::resume_data_flags_t flags = lt::torrent_handle::save_info_dict;
+        if (onlyIfModified) {
+            flags |= lt::torrent_handle::only_if_modified;
+        }
         for (auto &entry : m_impl->handles) {
             const lt::torrent_handle &handle = entry.second;
-            if (!handle.is_valid() || !handle.status().has_metadata) {
+            // Magnets still waiting for metadata are included: their resume
+            // data carries the info hash, name and trackers, which is enough
+            // to re-add them. Skipping them lost every such torrent on quit.
+            if (!handle.is_valid()) {
                 continue;
             }
-            handle.save_resume_data(lt::torrent_handle::save_info_dict);
+            // Every call posts exactly one alert, saved or failed, which is
+            // what makes the returned count something to wait on.
+            handle.save_resume_data(flags);
             requested += 1;
         }
     } catch (...) {

@@ -285,6 +285,9 @@ public:
     AddResult addFromResumeData(const ByteBuffer &resumeData, const std::string &savePath);
 
     Result removeTorrent(const std::string &infoHash, bool deleteFiles);
+    /// Asks one torrent to emit `resumeDataSaved`, so it survives a quit that
+    /// gives no chance to save.
+    Result saveResumeData(const std::string &infoHash);
     Result pauseTorrent(const std::string &infoHash);
     Result resumeTorrent(const std::string &infoHash);
     Result recheckTorrent(const std::string &infoHash);
@@ -356,9 +359,10 @@ public:
     /// Asks for a `stateUpdate` alert covering every torrent that changed.
     /// Preferred over calling a blocking `status()` per torrent.
     void requestStatusUpdates();
-    /// Asks every torrent with unsaved changes to emit `resumeDataSaved`.
-    /// Returns how many alerts to expect.
-    std::int32_t requestResumeData();
+    /// Asks every torrent to emit `resumeDataSaved` or `resumeDataFailed`.
+    /// With `onlyIfModified`, unchanged torrents report failure instead of
+    /// saving. Returns how many alerts to expect.
+    std::int32_t requestResumeData(bool onlyIfModified);
 
     /// The port the session actually bound to. Useful when the configuration
     /// asked for an ephemeral port.
