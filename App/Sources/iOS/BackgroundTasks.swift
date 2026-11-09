@@ -7,8 +7,10 @@ import UIKit
 ///
 /// Three mechanisms, and none of them adds up to continuous downloading:
 ///
-///  - `BGContinuedProcessingTask` is the real one. It must be started by a
-///    deliberate tap, the system shows a Live Activity, and it keeps running
+///  - `BGContinuedProcessingTask` is the real one. It must be started from the
+///    foreground after something the user did — here, turning on the setting,
+///    adding a torrent, or opening the app with downloads unfinished. The
+///    system shows a Live Activity, and it keeps running
 ///    while backgrounded. Progress reporting is mandatory, and the system
 ///    reclaims tasks showing little progress first — which suits torrents,
 ///    since an actively-swarming download keeps running while a stalled one is
@@ -18,6 +20,7 @@ import UIKit
 ///  - `beginBackgroundTask` buys a short window at suspension to save resume
 ///    data, without which the next launch forces a full recheck.
 @MainActor
+@Observable
 final class BackgroundCoordinator {
     /// Derived from the bundle identifier rather than hardcoded.
     ///
@@ -31,11 +34,27 @@ final class BackgroundCoordinator {
     static var continuedIdentifier: String { "\(bundleIdentifier).continued" }
     static var processingIdentifier: String { "\(bundleIdentifier).processing" }
 
-    private weak var manager: TorrentManager?
-    private var suspensionTask: UIBackgroundTaskIdentifier = .invalid
+    /// Whether transfers should keep running in the background, on unless the
+    /// user turns it off. Stored in UserDefaults so it survives relaunches.
+    private(set) var keepsDownloading: Bool
+    /// True from submitting the continued task until it ends, so the menu can
+    /// show it and it is never submitted twice.
+    private(set) var isContinuedActive = false
+    /// Why the last request was refused, for the menu to show.
+    private(set) var continuedError: String?
+
+    private static let keepsDownloadingKey = "keepsDownloadingInBackground"
+
+    @ObservationIgnored private weak var manager: TorrentManager?
+    @ObservationIgnored private var suspensionTask: UIBackgroundTaskIdentifier = .invalid
+    @ObservationIgnored private var continuedTask: BGContinuedProcessingTask?
+    /// Set once the continued task has been completed, by expiry or by the
+    /// loop, which stops the loop and keeps it from being completed twice.
+    @ObservationIgnored private var continuedTaskEnded = false
 
     init(manager: TorrentManager) {
         self.manager = manager
+        keepsDownloading = UserDefaults.standard.object(forKey: Self.keepsDownloadingKey) as? Bool ?? true
     }
 
     /// Must run before the app finishes launching, or the scheduler rejects the
@@ -56,12 +75,33 @@ final class BackgroundCoordinator {
         }
     }
 
-    /// Asks the system to keep transfers running after the app is backgrounded.
+    /// Turns background downloading on or off, remembering the choice.
     ///
-    /// Only valid from the foreground in response to a user action, which is
-    /// why this is wired to an explicit button rather than called on launch.
-    /// Static because the view issuing it has no handle on the coordinator.
-    static func requestContinuedProcessing() throws {
+    /// Turning it on starts the task straight away when something is
+    /// downloading; turning it off ends a running one.
+    func setKeepsDownloading(_ enabled: Bool) {
+        keepsDownloading = enabled
+        UserDefaults.standard.set(enabled, forKey: Self.keepsDownloadingKey)
+        if enabled {
+            startContinuedIfWanted()
+        } else {
+            BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.continuedIdentifier)
+            if let continuedTask { endContinued(continuedTask, success: true) }
+            isContinuedActive = false
+        }
+    }
+
+    /// Asks the system to keep transfers running after the app is backgrounded,
+    /// when the setting is on and something is downloading.
+    ///
+    /// Only valid from the foreground after a user action, so callers run it
+    /// when a download starts or the app is opened with downloads unfinished,
+    /// never from the background.
+    func startContinuedIfWanted() {
+        guard keepsDownloading, !isContinuedActive,
+              let manager, manager.hasActiveTransfers,
+              UIApplication.shared.applicationState == .active
+        else { return }
         let request = BGContinuedProcessingTaskRequest(
             identifier: Self.continuedIdentifier,
             title: "Downloading torrents",
@@ -69,7 +109,13 @@ final class BackgroundCoordinator {
         // .queue rather than .fail: waiting its turn beats refusing outright
         // when the per-app limit is already reached.
         request.strategy = .queue
-        try BGTaskScheduler.shared.submit(request)
+        do {
+            try BGTaskScheduler.shared.submit(request)
+            isContinuedActive = true
+            continuedError = nil
+        } catch {
+            continuedError = error.localizedDescription
+        }
     }
 
     /// Queues an opportunistic catch-up run, or withdraws a queued one when
@@ -93,29 +139,65 @@ final class BackgroundCoordinator {
         // Handlers are registered before launch finishes, so the engine may
         // not be up yet. Starting it twice is a no-op.
         await manager?.start()
-        let progress = task.progress
-        progress.totalUnitCount = 100
+        continuedTask = task
+        continuedTaskEnded = false
+        isContinuedActive = true
 
+        // The system ends the task on its own terms: stalled progress, the
+        // user tapping Stop, or resource pressure. Completing it straight away
+        // is what the system expects; the save runs under its own grace.
         task.expirationHandler = { [weak self] in
-            Task { @MainActor in await self?.saveResumeData() }
+            Task { @MainActor in
+                self?.endContinued(task, success: false)
+                self?.beginSuspensionGrace()
+            }
         }
 
-        // Reporting real progress is not cosmetic: the system reclaims tasks
-        // that appear stalled, so a healthy download has to look healthy.
-        while !Task.isCancelled {
-            guard let manager, manager.isRunning else { break }
-            let active = manager.torrents.filter { !$0.isFinished && !$0.isPaused }
-            guard !active.isEmpty else { break }
+        // Only ever grows, so a torrent that finishes keeps counting as done
+        // rather than dropping out, and one added while this runs is covered.
+        var tracked: Set<InfoHash> = []
+        let progress = task.progress
+        var reported: Int64 = 0
 
-            let completed = active.reduce(0.0) { $0 + $1.progress } / Double(active.count)
-            progress.completedUnitCount = Int64(completed * 100)
-            if completed >= 1.0 { break }
+        // Progress is reported in bytes rather than whole percent: the system
+        // reclaims a task whose progress stops moving, and on a large torrent
+        // one percent can take minutes, which read as stalled and ended in
+        // "Task failed" while data was still arriving.
+        while !continuedTaskEnded {
+            guard let manager, manager.isRunning else { break }
+            tracked.formUnion(manager.torrents
+                .filter { !$0.isFinished && !$0.isPaused }.map(\.infoHash))
+            let statuses = manager.torrents.filter { tracked.contains($0.infoHash) }
+            let remaining = statuses.filter { !$0.isFinished }
+            // Done, or everything left was paused or removed: nothing to wait for.
+            if remaining.allSatisfy(\.isPaused) { break }
+
+            // Never lowered, because a removed torrent or one whose metadata
+            // just arrived changes the totals, and backwards reads as stalled.
+            let done = statuses.reduce(Int64(0)) { $0 + $1.totalWantedDone }
+            reported = max(reported, done)
+            let wanted = statuses.reduce(Int64(0)) { $0 + $1.totalWanted }
+            // Kept above what is done until the end, so the system does not
+            // see a finished task while pieces are still being verified.
+            progress.totalUnitCount = max(wanted, reported + 1)
+            progress.completedUnitCount = reported
 
             try? await Task.sleep(for: .seconds(2))
         }
 
+        guard !continuedTaskEnded else { return }
+        progress.completedUnitCount = progress.totalUnitCount
         await saveResumeData()
-        task.setTaskCompleted(success: true)
+        endContinued(task, success: true)
+    }
+
+    /// Completes the task once, whichever of expiry or the loop gets there first.
+    private func endContinued(_ task: BGContinuedProcessingTask, success: Bool) {
+        guard !continuedTaskEnded else { return }
+        continuedTaskEnded = true
+        continuedTask = nil
+        isContinuedActive = false
+        task.setTaskCompleted(success: success)
     }
 
     private func runProcessing(_ task: BGProcessingTask) async {

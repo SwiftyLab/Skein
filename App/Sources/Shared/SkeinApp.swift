@@ -34,6 +34,15 @@ struct SkeinApp: App {
                 .onChange(of: scenePhase) { _, phase in
                     handleScenePhase(phase)
                 }
+                #if os(iOS)
+                .environment(background)
+                // A download starting while the app is open — an add, or the
+                // engine restoring unfinished ones — is the moment iOS accepts
+                // a request to keep running in the background.
+                .onChange(of: manager.hasActiveTransfers) { _, active in
+                    if active { background.startContinuedIfWanted() }
+                }
+                #endif
                 .onOpenURL { url in
                     handleIncoming(url)
                 }
@@ -105,6 +114,9 @@ extension SkeinApp {
         case .active:
             // Catches anything shared while the app was not running.
             Task { await manager.drainSharedInbox() }
+            // Restarts background downloading if the system ended it while
+            // the app was away.
+            background.startContinuedIfWanted()
         default:
             break
         }

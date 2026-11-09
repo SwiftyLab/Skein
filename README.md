@@ -83,6 +83,14 @@ every dependent target must too — including the app, via
   libtorrent piece deadlines, so media plays while it downloads, with VLCKit as the
   player. Sequential download and first/last-piece priority are offered both when
   a torrent is added and afterwards in its options.
+- **Background transfers** — on iOS, *Keep Downloading in Background* (the
+  ⋯ menu) is on by default and remembered across launches. While it is on, a
+  download starting with the app open asks iOS for a `BGContinuedProcessingTask`,
+  which keeps transfers running behind a Live Activity until they finish or iOS
+  ends it; progress is reported in bytes so a slow torrent does not read as
+  stalled ([BackgroundTasks.swift](App/Sources/iOS/BackgroundTasks.swift)).
+  Nothing runs after the app is swiped away. On the Mac, an App Nap hold keeps
+  transfers at full speed with the window hidden.
 - **RSS auto-download** — feed subscriptions with include/exclude or regex rules,
   polled on a schedule, remembering what it has already added.
 

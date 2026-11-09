@@ -54,6 +54,11 @@ public final class TorrentManager {
     private var resumeDataAlerts = 0
     private var resumeDataWaiters: [UUID: (target: Int, continuation: CheckedContinuation<Void, Never>)] = [:]
     private var checkpointTask: Task<Void, Never>?
+    #if os(macOS)
+    /// Held while anything is transferring, so App Nap does not throttle the
+    /// engine when the window is hidden or covered.
+    private var appNapHold: NSObjectProtocol?
+    #endif
     /// How often unsaved progress is written while running, so a crash or a
     /// kill without warning loses minutes rather than the whole torrent list.
     private static let checkpointInterval: Duration = .seconds(120)
@@ -178,6 +183,7 @@ public final class TorrentManager {
         eventTask?.cancel()
         eventTask = nil
         self.session = nil
+        holdOffAppNap(false)
         // Released only after the engine has stopped writing; these are a
         // limited per-process resource.
         downloadLocation.stopAccessing()
@@ -546,6 +552,8 @@ public final class TorrentManager {
     /// Aggregate progress across everything still running, for the Dock badge.
     private func updateDockProgress() {
         let active = torrents.filter { !$0.isFinished && !$0.isPaused }
+        // Runs on every status change, which is exactly when this can change.
+        holdOffAppNap(!active.isEmpty)
         guard !active.isEmpty else {
             notifier.updateDockProgress(fraction: Double?.none, activeCount: 0)
             return
@@ -645,5 +653,28 @@ extension TorrentManager {
     /// Saves one torrent now, rather than waiting for the next checkpoint.
     private func saveResumeData(for infoHash: InfoHash) {
         Task { [session] in try? await session?.saveResumeData(for: infoHash) }
+    }
+}
+
+// MARK: - App Nap
+
+extension TorrentManager {
+    /// Takes or releases the App Nap hold. A no-op outside macOS.
+    ///
+    /// Without it, macOS throttles timers and lowers the priority of an app
+    /// whose window is out of sight, which slows a transfer to a crawl. Idle
+    /// system sleep stays allowed: a download is not reason enough to keep a
+    /// laptop awake.
+    fileprivate func holdOffAppNap(_ hold: Bool) {
+        #if os(macOS)
+        if hold, appNapHold == nil {
+            appNapHold = ProcessInfo.processInfo.beginActivity(
+                options: .userInitiatedAllowingIdleSystemSleep,
+                reason: "Transferring torrents")
+        } else if !hold, let activity = appNapHold {
+            ProcessInfo.processInfo.endActivity(activity)
+            appNapHold = nil
+        }
+        #endif
     }
 }

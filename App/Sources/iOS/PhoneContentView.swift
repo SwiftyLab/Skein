@@ -14,18 +14,7 @@ struct PhoneContentView: View {
     @State private var pendingRemoval: TorrentStatus?
     @State private var isShowingSettings = false
     @State private var isShowingFeeds = false
-    @State private var backgroundRequest: BackgroundRequestState = .idle
-
-    /// `BGContinuedProcessingTask` can only be submitted from the foreground in
-    /// response to a deliberate action, so this is a button rather than
-    /// something the app arranges on its own.
-    private enum BackgroundRequestState {
-        case idle, running, failed(String)
-    }
-
-    private var hasActiveTransfers: Bool {
-        manager.torrents.contains { !$0.isFinished && !$0.isPaused }
-    }
+    @Environment(BackgroundCoordinator.self) private var background
 
     private var visibleTorrents: [TorrentStatus] {
         manager.torrents.filter { $0.matches(filter) }
@@ -87,7 +76,7 @@ struct PhoneContentView: View {
             .navigationTitle("Skein")
             .overlay { if manager.torrents.isEmpty { emptyState } }
             .overlay(alignment: .bottom) {
-                if case .failed(let message) = backgroundRequest {
+                if let message = background.continuedError {
                     Label("Could not keep running in the background: \(message)",
                           systemImage: "exclamationmark.triangle.fill")
                         .font(.caption)
@@ -100,12 +89,12 @@ struct PhoneContentView: View {
                 ToolbarItem(placement: .topBarLeading) { filterMenu }
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
-                        Button {
-                            requestBackgroundTransfers()
-                        } label: {
+                        Toggle(isOn: Binding(
+                            get: { background.keepsDownloading },
+                            set: { background.setKeepsDownloading($0) }
+                        )) {
                             Label(backgroundLabel, systemImage: "moon.zzz")
                         }
-                        .disabled(!hasActiveTransfers || isBackgroundRunning)
 
                         Divider()
 
@@ -174,26 +163,10 @@ struct PhoneContentView: View {
         }
     }
 
-    private var isBackgroundRunning: Bool {
-        if case .running = backgroundRequest { return true }
-        return false
-    }
-
     private var backgroundLabel: String {
-        switch backgroundRequest {
-        case .idle: return "Keep Downloading in Background"
-        case .running: return "Running in Background"
-        case .failed: return "Background Request Failed"
-        }
-    }
-
-    private func requestBackgroundTransfers() {
-        do {
-            try BackgroundCoordinator.requestContinuedProcessing()
-            backgroundRequest = .running
-        } catch {
-            backgroundRequest = .failed(String(describing: error))
-        }
+        if background.continuedError != nil { return "Background Request Failed" }
+        if background.isContinuedActive { return "Running in Background" }
+        return "Keep Downloading in Background"
     }
 
     private var rates: some View {
