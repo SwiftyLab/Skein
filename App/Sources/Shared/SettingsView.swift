@@ -80,6 +80,14 @@ struct SettingsView: View {
                 }
             }
 
+            if let supportURL = Self.supportURL {
+                Section {
+                    Link(destination: supportURL) {
+                        Label("Contact Support", systemImage: "envelope")
+                    }
+                }
+            }
+
             if let donationURL = Self.donationURL {
                 Section {
                     Link(destination: donationURL) {
@@ -106,6 +114,11 @@ struct SettingsView: View {
     /// nil hides the section, so a build without one shows nothing.
     private static let donationURL: URL? = (Bundle.main.object(forInfoDictionaryKey: "SKDonationURL") as? String)
         .flatMap { $0.isEmpty ? nil : URL(string: $0) }
+
+    /// A new email to the address Project.swift fills from TUIST_SUPPORT_EMAIL;
+    /// nil hides the row.
+    private static let supportURL: URL? = (Bundle.main.object(forInfoDictionaryKey: "SKSupportEmail") as? String)
+        .flatMap { $0.isEmpty ? nil : URL(string: "mailto:\($0)") }
 
     private func rateField(_ label: String, value: Binding<Int>) -> some View {
         LabeledContent(label) {

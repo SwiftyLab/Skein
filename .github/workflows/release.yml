@@ -18,7 +18,8 @@
 # Needs repository secrets ASC_ISSUER_ID, ASC_KEY_ID and ASC_PRIVATE_KEY (the
 # .p8 file's contents), and repository variables TUIST_BUNDLE_ID,
 # TUIST_DEVELOPMENT_TEAM, DEVELOPER_NAME and PRIVACY_POLICY_URL (the same values
-# as in Local.env), and optionally PATREON_URL. Signing the Mac app needs the Developer ID Application
+# as in Local.env), and optionally SUPPORT_URL (the source's website, else the
+# repository) and PATREON_URL. Signing the Mac app needs the Developer ID Application
 # certificate as secrets DEVELOPER_ID_P12 (the exported .p12, base64-encoded)
 # and DEVELOPER_ID_P12_PASSWORD: Apple's cloud-managed Developer ID signing
 # refuses App Store Connect API keys, even Admin ones (FB16835802).
@@ -90,6 +91,7 @@ jobs:
           TUIST_BUNDLE_ID: ${{ vars.TUIST_BUNDLE_ID }}
           DEVELOPER_NAME: ${{ vars.DEVELOPER_NAME }}
           PRIVACY_POLICY_URL: ${{ vars.PRIVACY_POLICY_URL }}
+          SUPPORT_URL: ${{ vars.SUPPORT_URL }}
           PATREON_URL: ${{ vars.PATREON_URL }}
           GH_TOKEN: ${{ github.token }}
 
@@ -170,6 +172,7 @@ jobs:
           TUIST_BUNDLE_ID: ${{ vars.TUIST_BUNDLE_ID }}
           TUIST_DEVELOPMENT_TEAM: ${{ vars.TUIST_DEVELOPMENT_TEAM }}
           TUIST_DONATION_URL: ${{ vars.TUIST_DONATION_URL }}
+          TUIST_SUPPORT_EMAIL: ${{ vars.TUIST_SUPPORT_EMAIL }}
 
       - name: Remove signing keychain
         if: always()

@@ -1310,8 +1310,11 @@ func publishRelease() async throws {
         "screenshots": sourceScreenshots(raw: raw),
         "versions": versions,
     ]) { _, new in new }
+    // The support page when there is one, so people looking for a contact land
+    // on its address rather than digging one out of the repository's history.
+    let website = supportURL.isEmpty ? "https://github.com/\(repo)" : supportURL
     json.merge([
-        "name": source.name, "identifier": source.identifier, "website": "https://github.com/\(repo)",
+        "name": source.name, "identifier": source.identifier, "website": website,
         "subtitle": source.subtitle, "description": source.description, "featuredApps": [bundleID],
         "fediUsername": source.fediUsername,
         "iconURL": icon, "tintColor": source.tintColor, "apps": [appEntry],

@@ -9,7 +9,7 @@
 #
 # Needs the same secrets as the Release workflow (ASC_ISSUER_ID, ASC_KEY_ID,
 # ASC_PRIVATE_KEY) and repository variables TUIST_BUNDLE_ID,
-# TUIST_DEVELOPMENT_TEAM, TUIST_ENABLE_APP_GROUP and TUIST_DONATION_URL (as in
+# TUIST_DEVELOPMENT_TEAM, TUIST_ENABLE_APP_GROUP, TUIST_DONATION_URL and TUIST_SUPPORT_EMAIL (as in
 # Local.env). Signing uses Xcode's cloud-managed certificates through the API
 # key, which works for App Store Connect uploads (unlike Developer ID).
 name: Submit
@@ -48,6 +48,7 @@ jobs:
       TUIST_ENABLE_APP_GROUP: ${{ vars.TUIST_ENABLE_APP_GROUP }}
       TUIST_APP_GROUP: ${{ vars.TUIST_APP_GROUP }}
       TUIST_DONATION_URL: ${{ vars.TUIST_DONATION_URL }}
+      TUIST_SUPPORT_EMAIL: ${{ vars.TUIST_SUPPORT_EMAIL }}
     steps:
       - uses: actions/checkout@v7
         with:

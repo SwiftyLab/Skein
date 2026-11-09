@@ -63,6 +63,10 @@ let appGroup = usesAppGroup ? (appGroupOverride.isEmpty ? "group.\(bundleId)" : 
 /// hidden.
 let donationURL = Environment.donationUrl.getString(default: "")
 
+/// Where Settings › Contact Support addresses its email. From Local.env like
+/// the donation link; when empty, the row is hidden.
+let supportEmail = Environment.supportEmail.getString(default: "")
+
 /// Signing settings, omitted entirely when no team is configured, so unsigned
 /// builds on a fresh clone keep working.
 let signingSettings: SettingsDictionary = developmentTeam.isEmpty
@@ -163,6 +167,7 @@ let project = Project(
                     "Skein discovers peers on your local network.",
                 "SKAppGroup": .string(appGroup),
                 "SKDonationURL": .string(donationURL),
+                "SKSupportEmail": .string(supportEmail),
                 "UILaunchScreen": [:],
                 // Lets the system hand us magnet: links from Safari and others.
                 "CFBundleURLTypes": [

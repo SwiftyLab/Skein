@@ -65,6 +65,7 @@ jobs:
       TUIST_ENABLE_APP_GROUP: ${{ vars.TUIST_ENABLE_APP_GROUP }}
       TUIST_APP_GROUP: ${{ vars.TUIST_APP_GROUP }}
       TUIST_DONATION_URL: ${{ vars.TUIST_DONATION_URL }}
+      TUIST_SUPPORT_EMAIL: ${{ vars.TUIST_SUPPORT_EMAIL }}
     steps:
       - uses: actions/checkout@v7
         with:

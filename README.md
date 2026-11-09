@@ -167,8 +167,11 @@ first.
 9. For the Release workflow, add repository secrets `ASC_ISSUER_ID`,
    `ASC_KEY_ID` and `ASC_PRIVATE_KEY` (the whole `.p8` file, including its
    `BEGIN`/`END` lines), and repository variables `TUIST_BUNDLE_ID`,
-   `TUIST_DEVELOPMENT_TEAM`, `DEVELOPER_NAME` and `PRIVACY_POLICY_URL` with the
-   same values as in `Local.env`. The
+   `TUIST_DEVELOPMENT_TEAM`, `DEVELOPER_NAME`, `PRIVACY_POLICY_URL`,
+   `SUPPORT_URL` and `TUIST_SUPPORT_EMAIL` with the same values as in
+   `Local.env`. `SUPPORT_URL` becomes the AltStore source's website (the
+   repository when unset), and `TUIST_SUPPORT_EMAIL` the address of the
+   app's Settings › Contact Support row. The
    workflow pushes to `main`, so if `main` is protected, allow GitHub Actions to
    bypass it.
 
@@ -249,6 +252,13 @@ release that already has a Mac zip is skipped. Locally:
 make mac-release                                  # build/mac/Skein-<version>-<build>-macOS.zip
 make mac-release RELEASE_TAG=v1.0-<build> VERSION=1.0 BUILD_NUMBER=<build>   # and attach it
 ```
+
+## Support
+
+Users are pointed at the support page, https://soumyamahunt.com/skein/, and
+support@soumyamahunt.com: from the AltStore source's website and from Settings ›
+Contact Support in the app. Questions and bug reports can go there, or to this
+repository's issues.
 
 ## Licensing
 
