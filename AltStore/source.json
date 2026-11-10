@@ -57,6 +57,23 @@
       "versions" : [
         {
           "assetURLs" : {
+            "28ee053e-2625-3003-ad90-19a452b799ed" : "https://github.com/SwiftyLab/Skein/releases/download/v1.0.2-202611091009/28ee053e-2625-3003-ad90-19a452b799ed.ipa",
+            "a0d876af-d7c2-3cc3-a94f-5e191af573df" : "https://github.com/SwiftyLab/Skein/releases/download/v1.0.2-202611091009/a0d876af-d7c2-3cc3-a94f-5e191af573df.ipa",
+            "c29f8080-14a1-371f-99b1-bf71e9305765" : "https://github.com/SwiftyLab/Skein/releases/download/v1.0.2-202611091009/c29f8080-14a1-371f-99b1-bf71e9305765.ipa",
+            "f686a56e-1c01-352e-8ae5-6643bef827e0" : "https://github.com/SwiftyLab/Skein/releases/download/v1.0.2-202611091009/f686a56e-1c01-352e-8ae5-6643bef827e0.ipa",
+            "manifest" : "https://github.com/SwiftyLab/Skein/releases/download/v1.0.2-202611091009/manifest.json",
+            "signature" : "https://github.com/SwiftyLab/Skein/releases/download/v1.0.2-202611091009/signature"
+          },
+          "buildVersion" : "202611091009",
+          "date" : "2026-11-10T03:34:09Z",
+          "downloadURL" : "https://github.com/SwiftyLab/Skein/releases/download/v1.0.2-202611091009/manifest.json",
+          "localizedDescription" : "Torrents now stay in your list after you close Skein, whether they are still downloading or already finished. Downloads keep going in the background by default, and no longer stop with \"Task failed\" while they are still making progress. You can turn this off in the ⋯ menu. You can also reach support from Settings › Contact Support.",
+          "minOSVersion" : "26.0",
+          "size" : 51450056,
+          "version" : "1.0.2"
+        },
+        {
+          "assetURLs" : {
             "1fec0f63-cb76-3217-bf2c-0ccc0bc511b8" : "https://github.com/SwiftyLab/Skein/releases/download/v1.0.1-202610100817/1fec0f63-cb76-3217-bf2c-0ccc0bc511b8.ipa",
             "19f8dfae-45d5-3887-a932-c69df4516377" : "https://github.com/SwiftyLab/Skein/releases/download/v1.0.1-202610100817/19f8dfae-45d5-3887-a932-c69df4516377.ipa",
             "b28cb7df-c8ee-3895-8c0f-7b681b84c364" : "https://github.com/SwiftyLab/Skein/releases/download/v1.0.1-202610100817/b28cb7df-c8ee-3895-8c0f-7b681b84c364.ipa",
