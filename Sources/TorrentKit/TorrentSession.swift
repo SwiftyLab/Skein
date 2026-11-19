@@ -449,6 +449,19 @@ public actor TorrentSession {
         continuation.finish()
     }
 
+    // MARK: - Diagnostics
+
+    /// How the engine sees the network, as plain text: listen sockets, the
+    /// interfaces and routes libtorrent enumerated and which it treats as
+    /// local-network only, connection counters and recent events. See
+    /// ``DiagnosticsReport`` for the full report users share.
+    public func networkDiagnostics() async -> String {
+        // Counters arrive through the alert pump; give the sample a moment.
+        box.session.requestSessionStats()
+        try? await Task.sleep(for: .milliseconds(400))
+        return String(box.session.networkDiagnostics())
+    }
+
     // MARK: - Helpers
 
     private func checkRunning() throws {

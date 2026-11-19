@@ -93,10 +93,12 @@ every dependent target must too — including the app, via
   transfers at full speed with the window hidden.
 - **RSS auto-download** — feed subscriptions with include/exclude or regex rules,
   polled on a schedule, remembering what it has already added.
+- **Network diagnostics** — Settings › Network Diagnostics produces a report to
+  copy or share when downloads stall. See [Debugging network problems](#debugging-network-problems).
 
 ### Verifying
 
-`swift test` runs 59 tests with no network. The one that matters most is
+`swift test` runs 81 tests with no network. The one that matters most is
 `LoopbackTransferTests`, which runs a seeder and a leecher in the same process,
 moves two megabytes between them over loopback, and compares the result
 byte-for-byte against the original — so piece transfer and hash verification are
@@ -260,6 +262,49 @@ release that already has a Mac zip is skipped. Locally:
 make mac-release                                  # build/mac/Skein-<version>-<build>-macOS.zip
 make mac-release RELEASE_TAG=v1.0-<build> VERSION=1.0 BUILD_NUMBER=<build>   # and attach it
 ```
+
+## Debugging network problems
+
+libtorrent listens on every interface address it finds, and announces to each
+tracker once from every listen socket. On iOS that means loopback, link-local,
+cellular, several `utun`/`ipsec` tunnels and a dozen IPv6 addresses. For any one
+tracker most of those sockets are rightly skipped with *skipping tracker announce
+(unreachable)*. A tracker's row in the app is a summary across sockets
+(`TorrentTracker` in [TorrentDetails.swift](Sources/TorrentKit/TorrentDetails.swift)):
+working if any socket announced, otherwise the first real error, and *Unreachable*
+only when every socket was skipped. The Trackers screen can expand each tracker
+to show every socket.
+
+libtorrent also marks an interface as local-network only, and never announces
+from it to internet trackers, when it has a private address and the routing
+table has internet routes but none on that interface. On iOS the routing table
+is incomplete: the kernel hides every IPv6 gateway, so libtorrent drops all IPv6
+routes. If iOS ever hides the IPv4 gateway too, Wi-Fi would look local-only and
+every IPv4 tracker would be skipped.
+
+When a user reports downloads stuck at 0%, ask for the report from Settings ›
+Network Diagnostics, taken after the torrent has been trying for a minute
+([DiagnosticsReport.swift](Sources/TorrentKit/DiagnosticsReport.swift), built
+from `Session::networkDiagnostics` in
+[TorrentBridge.cpp](Sources/TorrentBridge/TorrentBridge.cpp)). It contains:
+
+- the session settings and listen port;
+- every interface libtorrent enumerated, with its verdict (`internet`,
+  `LOCAL-ONLY` and why, or skipped) and gateway. The verdict restates
+  libtorrent's `expand_unspecified_address`, so keep it in step when updating
+  the submodule;
+- the default routes libtorrent parsed, and a count of the others per interface;
+- the listen sockets opened or failed, from listen alerts;
+- peer, DHT and tracker counters from `post_session_stats`;
+- the last 600 session-log, listen, tracker, port-mapping and error events;
+- each torrent's trackers with a line per listen socket: announced, skipped,
+  or the error, with fail count and next announce.
+
+It includes the device's IP addresses. Torrents are identified by a shortened
+info hash, never by name, and tracker URLs are cut to scheme, host and port,
+because private trackers embed a passkey in them. That redaction covers
+libtorrent's event messages too. The app only shows the report for the user to
+copy or share, and never sends it anywhere.
 
 ## Support
 

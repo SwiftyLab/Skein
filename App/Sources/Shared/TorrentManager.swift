@@ -678,3 +678,53 @@ extension TorrentManager {
         #endif
     }
 }
+
+// MARK: - Diagnostics
+
+// An extension rather than the class body, which is already long; in this
+// file so it can still read the private session.
+extension TorrentManager {
+    /// The shareable diagnostics report: app and device, the engine's view of
+    /// the network, and every torrent's trackers broken down per interface.
+    public func diagnosticsReport() async -> String {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let version = info["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info["CFBundleVersion"] as? String ?? "?"
+        var header = [
+            "Skein \(version) (\(build))",
+            "\(Self.deviceModel), \(ProcessInfo.processInfo.operatingSystemVersionString)",
+            "generated \(Date.now.formatted(.iso8601))",
+            "engine: \(isRunning ? "running" : "stopped")"
+        ]
+        if let startupError { header.append("startup error: \(startupError)") }
+
+        guard let session else {
+            return DiagnosticsReport.make(header: header, engine: "(no session)", torrents: [])
+        }
+        let engine = await session.networkDiagnostics()
+        var entries: [DiagnosticsReport.Torrent] = []
+        for torrent in torrents {
+            entries.append(.init(status: torrent, trackers: await session.trackers(of: torrent.infoHash)))
+        }
+        return DiagnosticsReport.make(header: header, engine: engine, torrents: entries)
+    }
+
+    /// The hardware model, e.g. "iPhone17,3" or "Mac16,1".
+    private static let deviceModel: String = {
+        var size = 0
+        sysctlbyname("hw.machine", nil, &size, nil, 0)
+        var machine = [CChar](repeating: 0, count: max(size, 1))
+        sysctlbyname("hw.machine", &machine, &size, nil, 0)
+        let value = String(cString: machine)
+        #if os(macOS)
+        // hw.machine is just "arm64" on a Mac; hw.model names the hardware.
+        size = 0
+        sysctlbyname("hw.model", nil, &size, nil, 0)
+        var model = [CChar](repeating: 0, count: max(size, 1))
+        sysctlbyname("hw.model", &model, &size, nil, 0)
+        return String(cString: model)
+        #else
+        return value
+        #endif
+    }()
+}

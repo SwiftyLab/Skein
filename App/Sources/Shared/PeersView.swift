@@ -116,6 +116,27 @@ struct TrackersView: View {
                     if let error = tracker.lastError {
                         Text(error).font(.caption2).foregroundStyle(.orange).lineLimit(2)
                     }
+                    if let message = tracker.trackerMessage {
+                        Text(message).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+                    }
+                    // libtorrent announces once per network interface; most
+                    // being skipped is normal, so the detail stays folded away.
+                    if !tracker.endpoints.isEmpty {
+                        DisclosureGroup("\(tracker.endpoints.count) network interfaces") {
+                            ForEach(tracker.endpoints) { endpoint in
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(endpoint.localEndpoint)
+                                        .font(.caption2.monospaced())
+                                        .lineLimit(1).truncationMode(.middle)
+                                    Text(endpoint.statusSummary)
+                                        .font(.caption2)
+                                        .foregroundStyle(endpoint.isWorking ? Color.green : .secondary)
+                                        .lineLimit(2)
+                                }
+                            }
+                        }
+                        .font(.caption)
+                    }
                 }
                 .padding(.vertical, 2)
             }

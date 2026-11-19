@@ -2,9 +2,13 @@
 
 #include <atomic>
 #include <cstdio>
+#include <deque>
 #include <exception>
+#include <map>
 #include <memory>
+#include <mutex>
 #include <shared_mutex>
+#include <sstream>
 #include <unordered_map>
 
 #include <libtorrent/alert_types.hpp>
@@ -13,6 +17,11 @@
 #include <libtorrent/extensions/ut_pex.hpp>
 #include <libtorrent/bencode.hpp>
 #include <libtorrent/create_torrent.hpp>
+#include <libtorrent/enum_net.hpp>
+#include <libtorrent/aux_/ip_helpers.hpp>
+#include <libtorrent/operations.hpp>
+#include <libtorrent/session_stats.hpp>
+#include <libtorrent/socket_type.hpp>
 #include <libtorrent/hex.hpp>
 #include <libtorrent/ip_filter.hpp>
 #include <libtorrent/peer_info.hpp>
@@ -171,7 +180,144 @@ struct Session::Impl {
     /// libtorrent addresses torrents by handle, not hex string, so keep the
     /// mapping the Swift side works in.
     std::unordered_map<std::string, lt::torrent_handle> handles;
+
+    // Diagnostics, written by the alert pump and read by networkDiagnostics()
+    // on another thread, hence their own lock.
+    std::mutex diagnosticsMutex;
+    /// Recent session, listen, tracker, port-mapping and error events, oldest
+    /// first, capped at `kEventLogLimit`.
+    std::deque<std::string> eventLog;
+    /// Listen sockets by "TYPE address:port", from listen_succeeded and
+    /// listen_failed alerts. libtorrent posts nothing when it closes one, so
+    /// each entry carries the time it was reported.
+    std::map<std::string, std::string> listenSockets;
+    /// The newest session_stats_alert sample, empty until one arrives.
+    std::vector<std::int64_t> stats;
+    lt::clock_type::time_point statsTime{};
+    const lt::clock_type::time_point started = lt::clock_type::now();
+
+    /// Records what the diagnostics report needs from one alert. Returns true
+    /// when the alert exists only for diagnostics and should not reach Swift.
+    bool recordForDiagnostics(lt::alert *raw);
+    /// Time since the session started, e.g. "+12.345s".
+    std::string elapsed(lt::clock_type::time_point when) const;
 };
+
+// MARK: - Diagnostics capture
+
+namespace {
+
+constexpr std::size_t kEventLogLimit = 600;
+
+std::string endpointString(const lt::address &address, int port) {
+    std::ostringstream out;
+    if (address.is_v6()) {
+        out << '[' << address.to_string() << "]:" << port;
+    } else {
+        out << address.to_string() << ':' << port;
+    }
+    return out.str();
+}
+
+void replaceAll(std::string &text, const std::string &from, const std::string &to) {
+    if (from.empty()) {
+        return;
+    }
+    for (std::size_t at = text.find(from); at != std::string::npos;
+         at = text.find(from, at + to.size())) {
+        text.replace(at, from.size(), to);
+    }
+}
+
+/// Scheme, host and port only: private trackers put a passkey in the path or
+/// query. Mirrors TorrentTracker.redactedURL on the Swift side.
+std::string redactTrackerURL(const std::string &url) {
+    const std::size_t schemeEnd = url.find("://");
+    if (schemeEnd == std::string::npos) {
+        return "(tracker)";
+    }
+    const std::size_t hostEnd = url.find_first_of("/?#", schemeEnd + 3);
+    if (hostEnd == std::string::npos) {
+        return url;
+    }
+    const std::string rest = url.substr(hostEnd);
+    return url.substr(0, hostEnd) + (rest == "/announce" ? rest : std::string("/…"));
+}
+
+} // namespace
+
+std::string Session::Impl::elapsed(lt::clock_type::time_point when) const {
+    char buffer[32];
+    std::snprintf(buffer, sizeof(buffer), "+%.3fs",
+                  double(lt::total_milliseconds(when - started)) / 1000.0);
+    return buffer;
+}
+
+bool Session::Impl::recordForDiagnostics(lt::alert *raw) {
+    Impl &impl = *this;
+    if (auto *a = lt::alert_cast<lt::session_stats_alert>(raw)) {
+        const auto counters = a->counters();
+        std::lock_guard<std::mutex> lock(impl.diagnosticsMutex);
+        impl.stats.assign(counters.begin(), counters.end());
+        impl.statsTime = a->timestamp();
+        return true;
+    }
+
+    constexpr lt::alert_category_t logged =
+        lt::alert_category::session_log | lt::alert_category::tracker |
+        lt::alert_category::port_mapping | lt::alert_category::error;
+    const bool isListen = lt::alert_cast<lt::listen_succeeded_alert>(raw) ||
+                          lt::alert_cast<lt::listen_failed_alert>(raw);
+    if (!(raw->category() & logged) && !isListen) {
+        return false;
+    }
+
+    // The report is for sharing, so torrent names become a short info hash
+    // and tracker URLs lose their passkeys.
+    std::string message = raw->message();
+    if (auto *a = dynamic_cast<lt::tracker_alert *>(raw)) {
+        const std::string url = a->tracker_url();
+        replaceAll(message, url, redactTrackerURL(url));
+    }
+    if (auto *a = dynamic_cast<lt::torrent_alert *>(raw)) {
+        const std::string name = a->torrent_name();
+        // Very short names would match unrelated text, and a magnet without
+        // metadata has none worth hiding.
+        if (name.size() < 3) {
+        } else if (a->handle.is_valid()) {
+            replaceAll(message, name, "<" + hexInfoHash(a->handle.info_hashes()).substr(0, 12) + ">");
+        } else {
+            replaceAll(message, name, "<torrent>");
+        }
+    }
+
+    std::string line = impl.elapsed(raw->timestamp());
+    line += ' ';
+    line += raw->what();
+    line += ": ";
+    line += message;
+
+    std::lock_guard<std::mutex> lock(impl.diagnosticsMutex);
+    if (auto *a = lt::alert_cast<lt::listen_succeeded_alert>(raw)) {
+        impl.listenSockets[std::string(lt::socket_type_name(a->socket_type)) + " " +
+                           endpointString(a->address, a->port)] =
+            "listening (" + impl.elapsed(raw->timestamp()) + ")";
+    } else if (auto *a = lt::alert_cast<lt::listen_failed_alert>(raw)) {
+        std::string key = std::string(lt::socket_type_name(a->socket_type)) + " " +
+                          endpointString(a->address, a->port);
+        if (std::string(a->listen_interface()) != a->address.to_string()) {
+            key += std::string(" (") + a->listen_interface() + ")";
+        }
+        impl.listenSockets[key] = std::string("FAILED in ") + lt::operation_name(a->op) +
+                                  ": " + a->error.message() + " (" +
+                                  impl.elapsed(raw->timestamp()) + ")";
+    }
+    impl.eventLog.push_back(std::move(line));
+    while (impl.eventLog.size() > kEventLogLimit) {
+        impl.eventLog.pop_front();
+    }
+    return lt::alert_cast<lt::log_alert>(raw) != nullptr;
+}
 
 // MARK: - Lifetime
 
@@ -181,10 +327,14 @@ Session::Session(const SessionConfig &config) : m_impl(new Impl()) {
 
     // Without an explicit mask libtorrent posts every alert category, which
     // floods the queue. Take the ones the client acts on.
+    // session_log and port_mapping only feed the diagnostics event log; the
+    // pump keeps session_log alerts out of the Swift event stream.
     settings.set_int(lt::settings_pack::alert_mask,
                      lt::alert_category::status | lt::alert_category::error |
                          lt::alert_category::storage | lt::alert_category::tracker |
-                         lt::alert_category::performance_warning);
+                         lt::alert_category::performance_warning |
+                         lt::alert_category::port_mapping |
+                         lt::alert_category::session_log);
 
     lt::session_params params(settings);
     if (config.usePosixDiskIO) {
@@ -255,6 +405,11 @@ std::vector<Alert> Session::waitAndDrainAlerts(std::int32_t timeoutMs) {
         m_impl->session->pop_alerts(&alerts);
 
         for (lt::alert *raw : alerts) {
+            // Diagnostics-only alerts are recorded and not forwarded: the
+            // session log in particular would flood the Swift event stream.
+            if (m_impl->recordForDiagnostics(raw)) {
+                continue;
+            }
             if (auto *a = lt::alert_cast<lt::state_update_alert>(raw)) {
                 // One libtorrent alert carries many statuses; fan them out so
                 // Swift sees one event per torrent.
@@ -863,23 +1018,40 @@ std::vector<TrackerEntry> Session::listTrackers(const std::string &infoHash) {
         if (it == m_impl->handles.end() || !it->second.is_valid()) {
             return entries;
         }
+        const lt::info_hash_t hashes = it->second.info_hashes();
+        const lt::time_point32 now = lt::time_point_cast<lt::seconds32>(lt::clock_type::now());
         for (const lt::announce_entry &tracker : it->second.trackers()) {
             TrackerEntry entry;
             entry.url = tracker.url;
             entry.tier = tracker.tier;
-            entry.isWorking = false;
             entry.isVerified = tracker.verified;
-            entry.peerCount = 0;
-            // An announce_entry holds one endpoint per listen socket; treat the
-            // tracker as working if any of them succeeded.
+            // One endpoint per listen socket, each announcing every protocol
+            // version the torrent has. Summarising is TorrentKit's job; keep
+            // every row so diagnostics can show which socket did what.
             for (const lt::announce_endpoint &endpoint : tracker.endpoints) {
-                for (const lt::announce_infohash &hash : endpoint.info_hashes) {
-                    if (hash.last_error) {
-                        entry.lastError = hash.last_error.message();
-                    } else if (hash.start_sent || hash.complete_sent) {
-                        entry.isWorking = true;
+                for (const lt::protocol_version version : lt::all_versions) {
+                    if (!hashes.has(version)) {
+                        continue;
                     }
-                    entry.peerCount = std::max(entry.peerCount, hash.scrape_complete);
+                    const lt::announce_infohash &hash = endpoint.info_hashes[version];
+                    TrackerEndpointEntry row;
+                    row.localEndpoint = endpointString(endpoint.local_endpoint.address(),
+                                                       endpoint.local_endpoint.port());
+                    row.protocolVersion = version == lt::protocol_version::V1 ? 1 : 2;
+                    row.isEnabled = endpoint.enabled;
+                    row.isUpdating = hash.updating;
+                    row.hasAnnounced = hash.start_sent || hash.complete_sent;
+                    row.isSkipped = hash.last_error == lt::errors::announce_skipped;
+                    row.lastError = hash.last_error ? hash.last_error.message() : std::string();
+                    row.trackerMessage = hash.message;
+                    row.fails = hash.fails;
+                    row.scrapeComplete = hash.scrape_complete;
+                    row.scrapeIncomplete = hash.scrape_incomplete;
+                    row.secondsToNextAnnounce =
+                        hash.next_announce > now
+                            ? std::int64_t(lt::total_seconds(hash.next_announce - now))
+                            : -1;
+                    entry.endpoints.push_back(std::move(row));
                 }
             }
             entries.push_back(std::move(entry));
@@ -1017,6 +1189,194 @@ std::int32_t Session::listenPort() const {
     } catch (...) {
         return 0;
     }
+}
+
+// MARK: - Diagnostics
+
+void Session::requestSessionStats() {
+    try {
+        std::shared_lock<std::shared_mutex> lock(m_impl->sessionMutex);
+        if (m_impl->session) {
+            m_impl->session->post_session_stats();
+        }
+    } catch (...) {
+    }
+}
+
+namespace {
+
+const char *proxyTypeName(int type) {
+    switch (type) {
+    case lt::settings_pack::none: return "none";
+    case lt::settings_pack::socks4: return "socks4";
+    case lt::settings_pack::socks5: return "socks5";
+    case lt::settings_pack::socks5_pw: return "socks5 (password)";
+    case lt::settings_pack::http: return "http";
+    case lt::settings_pack::http_pw: return "http (password)";
+    default: return "other";
+    }
+}
+
+/// Lists the interfaces libtorrent enumerates and, for each, the decision
+/// session_impl's expand_unspecified_address() makes when listening on
+/// 0.0.0.0 / [::]: skipped, local-network only (never announced to internet
+/// trackers), or internet. Restated here because libtorrent does not expose
+/// it; keep in step with Vendor/libtorrent/src/session_impl.cpp.
+void appendInterfaces(std::ostringstream &out) {
+    lt::io_context ioc;
+    lt::error_code ifError;
+    lt::error_code routeError;
+    const std::vector<lt::ip_interface> interfaces = lt::enum_net_interfaces(ioc, ifError);
+    const std::vector<lt::ip_route> routes = lt::enum_routes(ioc, routeError);
+    const bool anyInternetRoute = lt::has_any_internet_route(routes);
+
+    out << "\n## Interfaces (as libtorrent classifies them)\n";
+    if (ifError) {
+        out << "enum_net_interfaces failed: " << ifError.message() << '\n';
+    }
+    out << "any internet route: " << (anyInternetRoute ? "yes" : "no")
+        << " (if no, nothing below is marked local-only by the route check)\n";
+    for (const lt::ip_interface &iface : interfaces) {
+        const lt::address &address = iface.interface_address;
+        const int family = address.is_v4() ? AF_INET : AF_INET6;
+        const bool up = bool(iface.flags & lt::if_flags::up) &&
+                        (iface.state == lt::if_state::up ||
+                         iface.state == lt::if_state::unknown);
+        const bool loopback = address.is_loopback() || bool(iface.flags & lt::if_flags::loopback);
+        const bool linkLocal = lt::aux::is_link_local(address);
+        const bool global = lt::aux::is_global(address);
+        const bool pointToPoint = bool(iface.flags & lt::if_flags::pointopoint);
+        const bool internetRoute = lt::has_internet_route(iface.name, family, routes);
+
+        std::string verdict;
+        if (!iface.preferred) {
+            verdict = "skipped (address not preferred)";
+        } else if (!up) {
+            verdict = "skipped (down)";
+        } else if (loopback) {
+            verdict = "LOCAL-ONLY (loopback)";
+        } else if (linkLocal) {
+            verdict = "LOCAL-ONLY (link-local)";
+        } else if (!global && !pointToPoint && anyInternetRoute && !internetRoute) {
+            verdict = "LOCAL-ONLY (private address, no internet route on this interface)";
+        } else {
+            verdict = "internet";
+        }
+
+        out << iface.name << "  " << address.to_string() << '/' << iface.netmask.to_string()
+            << "  " << verdict << "  [";
+        out << (global ? "global" : "private");
+        if (pointToPoint) out << ", point-to-point";
+        if (internetRoute) out << ", internet route";
+        if (const auto gateway = lt::get_gateway(iface, routes)) {
+            out << ", gateway " << gateway->to_string();
+        }
+        out << "]\n";
+    }
+
+    out << "\n## Routes (as libtorrent parsed them)\n";
+    if (routeError) {
+        out << "enum_routes failed: " << routeError.message() << '\n';
+    }
+    // A VPN can install thousands of routes, so list the default routes and
+    // count the rest per interface. Whether an interface had any internet
+    // route (default or global destination) is already in its line above.
+    out << routes.size() << " routes parsed. iOS hides IPv6 gateways, so libtorrent"
+        << " drops every IPv6 route; that is expected.\n";
+    std::map<std::string, int> otherRoutes;
+    for (const lt::ip_route &route : routes) {
+        if (route.destination.is_unspecified()) {
+            out << "default  " << route.name << "  " << route.destination.to_string()
+                << " via " << route.gateway.to_string() << '\n';
+        } else {
+            otherRoutes[std::string(route.name) +
+                        (route.destination.is_v4() ? " IPv4" : " IPv6")] += 1;
+        }
+    }
+    for (const auto &count : otherRoutes) {
+        out << "other    " << count.first << ": " << count.second << '\n';
+    }
+}
+
+} // namespace
+
+std::string Session::networkDiagnostics() {
+    std::ostringstream out;
+    try {
+        out << "libtorrent " << lt::version() << ", " << OpenSSL_version(OPENSSL_VERSION) << '\n';
+
+        std::shared_lock<std::shared_mutex> lock(m_impl->sessionMutex);
+        if (!m_impl->session) {
+            out << "Session: stopped\n";
+        } else {
+            const lt::settings_pack settings = m_impl->session->get_settings();
+            out << "\n## Session\n"
+                << "uptime: " << m_impl->elapsed(lt::clock_type::now()) << '\n'
+                << "listen_interfaces: " << settings.get_str(lt::settings_pack::listen_interfaces) << '\n'
+                << "outgoing_interfaces: " << settings.get_str(lt::settings_pack::outgoing_interfaces) << '\n'
+                << "listening: " << (m_impl->session->is_listening() ? "yes" : "no")
+                << ", port " << m_impl->session->listen_port()
+                << ", SSL port " << m_impl->session->ssl_listen_port() << '\n'
+                << "DHT: " << (m_impl->session->is_dht_running() ? "running" : "off")
+                << ", LSD: " << (settings.get_bool(lt::settings_pack::enable_lsd) ? "on" : "off")
+                << ", UPnP: " << (settings.get_bool(lt::settings_pack::enable_upnp) ? "on" : "off")
+                << ", NAT-PMP: " << (settings.get_bool(lt::settings_pack::enable_natpmp) ? "on" : "off") << '\n'
+                << "proxy: " << proxyTypeName(settings.get_int(lt::settings_pack::proxy_type)) << '\n'
+                << "encryption out/in: " << settings.get_int(lt::settings_pack::out_enc_policy) << '/'
+                << settings.get_int(lt::settings_pack::in_enc_policy)
+                << " (0 forced, 1 enabled, 2 disabled)\n"
+                << "torrents: " << m_impl->handles.size() << '\n';
+        }
+
+        appendInterfaces(out);
+
+        std::lock_guard<std::mutex> diagnosticsLock(m_impl->diagnosticsMutex);
+        out << "\n## Listen sockets (from listen alerts; closed ones are not reported)\n";
+        if (m_impl->listenSockets.empty()) {
+            out << "(none reported)\n";
+        }
+        for (const auto &socket : m_impl->listenSockets) {
+            out << socket.first << "  " << socket.second << '\n';
+        }
+
+        out << "\n## Counters\n";
+        if (m_impl->stats.empty()) {
+            out << "(no sample yet)\n";
+        } else {
+            out << "sampled at " << m_impl->elapsed(m_impl->statsTime) << '\n';
+            static const char *const names[] = {
+                "peer.num_peers_connected", "peer.num_peers_half_open",
+                "peer.num_tcp_peers", "peer.num_utp_peers",
+                "peer.incoming_connections", "net.has_incoming_connections",
+                "peer.connect_timeouts", "peer.connrefused_peers",
+                "peer.unreachable_peers", "peer.no_access_peers",
+                "peer.error_peers", "peer.error_outgoing_peers",
+                "peer.error_incoming_peers", "peer.num_banned_peers",
+                "dht.dht_nodes", "dht.dht_messages_in", "dht.dht_messages_out",
+                "net.sent_tracker_bytes", "net.recv_tracker_bytes",
+                "net.recv_payload_bytes", "net.sent_payload_bytes",
+            };
+            for (const char *name : names) {
+                const int index = lt::find_metric_idx(name);
+                if (index >= 0 && std::size_t(index) < m_impl->stats.size()) {
+                    out << name << ": " << m_impl->stats[std::size_t(index)] << '\n';
+                }
+            }
+        }
+
+        out << "\n## Recent events (oldest first, last " << kEventLogLimit << ")\n";
+        if (m_impl->eventLog.empty()) {
+            out << "(none)\n";
+        }
+        for (const std::string &line : m_impl->eventLog) {
+            out << line << '\n';
+        }
+    } catch (const std::exception &e) {
+        out << "\ndiagnostics failed: " << e.what() << '\n';
+    } catch (...) {
+        out << "\ndiagnostics failed: unknown C++ exception\n";
+    }
+    return out.str();
 }
 
 Result Session::addPeer(const std::string &infoHash, const std::string &host,

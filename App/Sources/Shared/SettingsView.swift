@@ -80,6 +80,16 @@ struct SettingsView: View {
                 }
             }
 
+            Section {
+                NavigationLink {
+                    DiagnosticsView()
+                } label: {
+                    Label("Network Diagnostics", systemImage: "stethoscope")
+                }
+            } footer: {
+                Text("If downloads stay at 0%, copy this report into your bug report.")
+            }
+
             if let supportURL = Self.supportURL {
                 Section {
                     Link(destination: supportURL) {

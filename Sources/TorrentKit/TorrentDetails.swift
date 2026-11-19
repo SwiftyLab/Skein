@@ -87,25 +87,162 @@ public struct TorrentPeer: Sendable, Identifiable, Hashable {
     }
 }
 
+/// One listen socket's dealings with one tracker.
+///
+/// libtorrent announces to each tracker separately from every listen socket,
+/// and opens one per interface address — on iOS that includes loopback,
+/// link-local, cellular, tunnels and many IPv6 addresses. Most are rightly
+/// skipped for any one tracker, so these matter mainly for diagnostics;
+/// ``TorrentTracker`` summarises them.
+public struct TrackerEndpoint: Sendable, Identifiable, Hashable {
+    /// The listen socket's address, e.g. "192.168.1.5:6881".
+    public let localEndpoint: String
+    /// BitTorrent protocol version announced: 1, or 2 for v2 and hybrid torrents.
+    public let protocolVersion: Int
+    public let isEnabled: Bool
+    /// An announce is in flight.
+    public let isUpdating: Bool
+    /// The tracker has accepted an announce from this socket.
+    public let hasAnnounced: Bool
+    /// libtorrent did not announce from this socket because it cannot reach the
+    /// tracker's address, e.g. an IPv6 socket and an IPv4-only tracker.
+    public let isSkipped: Bool
+    public let lastError: String?
+    /// Free text the tracker sent back, usually a warning.
+    public let trackerMessage: String?
+    /// Consecutive failures.
+    public let fails: Int
+    /// Seeds and leechers the tracker reported, when it did.
+    public let seeds: Int?
+    public let leechers: Int?
+    /// Seconds until the next announce, when one is scheduled.
+    public let secondsToNextAnnounce: Int?
+
+    public var id: String { "\(localEndpoint) v\(protocolVersion)" }
+
+    /// The last announce from this socket succeeded.
+    public var isWorking: Bool { hasAnnounced && lastError == nil }
+
+    /// A short status, e.g. "announced" or "skipped (cannot route)".
+    public var statusSummary: String {
+        if !isEnabled { return "disabled" }
+        if isSkipped { return "skipped (cannot route)" }
+        if isWorking { return "announced" }
+        if let lastError { return "error: \(lastError)" }
+        if isUpdating { return "announcing" }
+        return "pending"
+    }
+
+    init(
+        localEndpoint: String, protocolVersion: Int = 1, isEnabled: Bool = true,
+        isUpdating: Bool = false, hasAnnounced: Bool = false, isSkipped: Bool = false,
+        lastError: String? = nil, trackerMessage: String? = nil, fails: Int = 0,
+        seeds: Int? = nil, leechers: Int? = nil, secondsToNextAnnounce: Int? = nil
+    ) {
+        self.localEndpoint = localEndpoint
+        self.protocolVersion = protocolVersion
+        self.isEnabled = isEnabled
+        self.isUpdating = isUpdating
+        self.hasAnnounced = hasAnnounced
+        self.isSkipped = isSkipped
+        self.lastError = lastError
+        self.trackerMessage = trackerMessage
+        self.fails = fails
+        self.seeds = seeds
+        self.leechers = leechers
+        self.secondsToNextAnnounce = secondsToNextAnnounce
+    }
+
+    init(_ entry: torrentbridge.TrackerEndpointEntry) {
+        let error = String(entry.lastError)
+        let message = String(entry.trackerMessage)
+        self.init(
+            localEndpoint: String(entry.localEndpoint),
+            protocolVersion: Int(entry.protocolVersion),
+            isEnabled: entry.isEnabled,
+            isUpdating: entry.isUpdating,
+            hasAnnounced: entry.hasAnnounced,
+            isSkipped: entry.isSkipped,
+            lastError: error.isEmpty ? nil : error,
+            trackerMessage: message.isEmpty ? nil : message,
+            fails: Int(entry.fails),
+            seeds: entry.scrapeComplete >= 0 ? Int(entry.scrapeComplete) : nil,
+            leechers: entry.scrapeIncomplete >= 0 ? Int(entry.scrapeIncomplete) : nil,
+            secondsToNextAnnounce: entry.secondsToNextAnnounce >= 0
+                ? Int(entry.secondsToNextAnnounce) : nil)
+    }
+}
+
 /// A tracker announced to.
 public struct TorrentTracker: Sendable, Identifiable, Hashable {
+    /// Shown when every listen socket was skipped, in place of libtorrent's
+    /// "skipping tracker announce (unreachable)", which reads like a network
+    /// fault rather than "no interface could reach this address".
+    public static let unreachableMessage =
+        "Unreachable: no network interface can reach this tracker"
+
     public let url: String
     public let tier: Int
-    public let isWorking: Bool
     public let isVerified: Bool
-    public let lastError: String?
-    public let peerCount: Int
+    /// One row per listen socket and protocol version.
+    public let endpoints: [TrackerEndpoint]
 
     public var id: String { url }
 
+    /// Any listen socket's last announce succeeded.
+    public var isWorking: Bool { endpoints.contains(where: \.isWorking) }
+
+    /// The error worth showing, or nil when the tracker works or has not
+    /// answered yet.
+    ///
+    /// Skipped sockets are expected — most of a phone's interfaces cannot reach
+    /// any given tracker — so they never hide a real error from another socket,
+    /// and only count when every socket was skipped.
+    public var lastError: String? {
+        guard !isWorking else { return nil }
+        if let real = endpoints.first(where: { $0.lastError != nil && !$0.isSkipped }) {
+            return real.lastError
+        }
+        if !endpoints.isEmpty, endpoints.allSatisfy(\.isSkipped) {
+            return Self.unreachableMessage
+        }
+        return nil
+    }
+
+    /// A warning the tracker sent, if any.
+    public var trackerMessage: String? {
+        endpoints.lazy.compactMap(\.trackerMessage).first
+    }
+
+    /// The most seeds any socket heard about.
+    public var peerCount: Int { endpoints.compactMap(\.seeds).max() ?? 0 }
+
+    /// The URL with anything that might identify the user removed. Private
+    /// trackers put a passkey in the path or query, so only the scheme, host
+    /// and port survive; for sharing in diagnostics.
+    public var redactedURL: String {
+        guard let components = URLComponents(string: url),
+              let scheme = components.scheme, let host = components.host
+        else { return "(unparseable tracker URL)" }
+        let port = components.port.map { ":\($0)" } ?? ""
+        let path = components.path == "/announce" && components.query == nil
+            ? "/announce" : "/…"
+        return "\(scheme)://\(host)\(port)\(path)"
+    }
+
+    init(url: String, tier: Int = 0, isVerified: Bool = false, endpoints: [TrackerEndpoint]) {
+        self.url = url
+        self.tier = tier
+        self.isVerified = isVerified
+        self.endpoints = endpoints
+    }
+
     init(_ entry: torrentbridge.TrackerEntry) {
-        url = String(entry.url)
-        tier = Int(entry.tier)
-        isWorking = entry.isWorking
-        isVerified = entry.isVerified
-        let error = String(entry.lastError)
-        lastError = error.isEmpty ? nil : error
-        peerCount = Int(entry.peerCount)
+        self.init(
+            url: String(entry.url),
+            tier: Int(entry.tier),
+            isVerified: entry.isVerified,
+            endpoints: entry.endpoints.map(TrackerEndpoint.init))
     }
 }
 

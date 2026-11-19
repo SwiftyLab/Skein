@@ -1,1 +1,3 @@
-Torrents now stay in your list after you close Skein, whether they are still downloading or already finished. Previously the list could come back empty after quitting.
+Trackers now show their real status. Skein contacts each tracker from every network connection on your device, and the message from the last connection used to win, so a tracker could read "Skipping tracker announce (unreachable)" even when another connection was working or had failed for a different reason. Tap a tracker's network interfaces to see how each connection did.
+
+New: Settings › Network Diagnostics. If downloads stay at 0%, copy the report and include it in your bug report. It shows how Skein sees your network, and leaves out torrent names and tracker passkeys.

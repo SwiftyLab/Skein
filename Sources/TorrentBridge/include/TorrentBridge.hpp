@@ -160,14 +160,45 @@ struct PeerEntry {
     bool isEncrypted;
 };
 
+/// One listen socket's dealings with one tracker.
+///
+/// libtorrent announces to every tracker once per listen socket, and opens a
+/// listen socket per interface address: on iOS that is loopback, link-local,
+/// cellular, several tunnels and a dozen IPv6 addresses. Most of those are
+/// rightly skipped for any given tracker, so a tracker's state is a summary of
+/// these, which TorrentKit computes rather than the bridge.
+struct TrackerEndpointEntry {
+    /// The listen socket's address, e.g. "192.168.1.5:6881".
+    std::string localEndpoint;
+    /// BitTorrent protocol version announced: 1, or 2 for a v2/hybrid torrent.
+    std::int32_t protocolVersion;
+    bool isEnabled;
+    /// An announce is in flight.
+    bool isUpdating;
+    /// The tracker accepted an announce from this socket.
+    bool hasAnnounced;
+    /// libtorrent skipped this socket because it cannot route to the tracker
+    /// (`errors::announce_skipped`). Expected for most sockets.
+    bool isSkipped;
+    /// Empty when the last announce succeeded.
+    std::string lastError;
+    /// Free text the tracker sent back, often a warning.
+    std::string trackerMessage;
+    /// Consecutive failures.
+    std::int32_t fails;
+    /// Seeds and leechers the tracker reported; -1 if unknown.
+    std::int32_t scrapeComplete;
+    std::int32_t scrapeIncomplete;
+    /// Seconds until the next announce; negative if none is scheduled.
+    std::int64_t secondsToNextAnnounce;
+};
+
 /// One tracker for a torrent.
 struct TrackerEntry {
     std::string url;
     std::int32_t tier;
-    bool isWorking;
     bool isVerified;
-    std::string lastError;
-    std::int32_t peerCount;
+    std::vector<TrackerEndpointEntry> endpoints;
 };
 
 /// One event drained from libtorrent's alert queue.
@@ -367,6 +398,22 @@ public:
     /// The port the session actually bound to. Useful when the configuration
     /// asked for an ephemeral port.
     std::int32_t listenPort() const;
+
+    // MARK: Diagnostics
+
+    /// Asks libtorrent for a fresh sample of its counters. Asynchronous: the
+    /// sample arrives through the alert pump, so wait a moment before calling
+    /// `networkDiagnostics` if the report should include it.
+    void requestSessionStats();
+
+    /// A plain-text report of how the engine sees the network: settings, the
+    /// listen sockets it opened or failed to open, the interfaces and routes it
+    /// enumerated and which of them it treats as local-network only (and so
+    /// will not announce to internet trackers from), connection counters, and
+    /// a log of recent session, listen, tracker, port-mapping and error events.
+    ///
+    /// Contains IP addresses, so it is only ever shown to the user to share.
+    std::string networkDiagnostics();
 
     /// Manually introduces a peer, bypassing trackers and DHT. Lets two local
     /// sessions find each other without any external infrastructure.
