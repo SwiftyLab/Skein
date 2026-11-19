@@ -57,6 +57,25 @@
       "versions" : [
         {
           "assetURLs" : {
+            "2cad38ad-71d5-3bab-9481-847d3ca64cbf" : "https://github.com/SwiftyLab/Skein/releases/download/v1.0.3-202611191438/2cad38ad-71d5-3bab-9481-847d3ca64cbf.ipa",
+            "2f5ad87b-1561-30d1-af6c-7e6efb49b601" : "https://github.com/SwiftyLab/Skein/releases/download/v1.0.3-202611191438/2f5ad87b-1561-30d1-af6c-7e6efb49b601.ipa",
+            "8fe5b37c-0e86-38f1-a24a-11f5fa47b0b2" : "https://github.com/SwiftyLab/Skein/releases/download/v1.0.3-202611191438/8fe5b37c-0e86-38f1-a24a-11f5fa47b0b2.ipa",
+            "44ec3e8f-dfd0-370c-b94a-26548ca197a3" : "https://github.com/SwiftyLab/Skein/releases/download/v1.0.3-202611191438/44ec3e8f-dfd0-370c-b94a-26548ca197a3.ipa",
+            "6864187f-023c-31af-9bef-63c0aa944e2c" : "https://github.com/SwiftyLab/Skein/releases/download/v1.0.3-202611191438/6864187f-023c-31af-9bef-63c0aa944e2c.ipa",
+            "d49c6883-adc3-3241-b3e5-2098d7370dc8" : "https://github.com/SwiftyLab/Skein/releases/download/v1.0.3-202611191438/d49c6883-adc3-3241-b3e5-2098d7370dc8.ipa",
+            "manifest" : "https://github.com/SwiftyLab/Skein/releases/download/v1.0.3-202611191438/manifest.json",
+            "signature" : "https://github.com/SwiftyLab/Skein/releases/download/v1.0.3-202611191438/signature"
+          },
+          "buildVersion" : "202611191438",
+          "date" : "2026-11-19T20:32:28Z",
+          "downloadURL" : "https://github.com/SwiftyLab/Skein/releases/download/v1.0.3-202611191438/manifest.json",
+          "localizedDescription" : "Trackers now show their real status. Skein contacts each tracker from every network connection on your device, and the message from the last connection used to win, so a tracker could read \"Skipping tracker announce (unreachable)\" even when another connection was working or had failed for a different reason. Tap a tracker's network interfaces to see how each connection did.\n\nNew: Settings › Network Diagnostics. If downloads stay at 0%, copy the report and include it in your bug report. It shows how Skein sees your network, and leaves out torrent names and tracker passkeys.",
+          "minOSVersion" : "26.0",
+          "size" : 52859881,
+          "version" : "1.0.3"
+        },
+        {
+          "assetURLs" : {
             "28ee053e-2625-3003-ad90-19a452b799ed" : "https://github.com/SwiftyLab/Skein/releases/download/v1.0.2-202611091009/28ee053e-2625-3003-ad90-19a452b799ed.ipa",
             "a0d876af-d7c2-3cc3-a94f-5e191af573df" : "https://github.com/SwiftyLab/Skein/releases/download/v1.0.2-202611091009/a0d876af-d7c2-3cc3-a94f-5e191af573df.ipa",
             "c29f8080-14a1-371f-99b1-bf71e9305765" : "https://github.com/SwiftyLab/Skein/releases/download/v1.0.2-202611091009/c29f8080-14a1-371f-99b1-bf71e9305765.ipa",
